@@ -1,0 +1,15 @@
+{
+  "name": "@pa/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend skeleton — services scaffolded per spec §23. NOT implemented; structure only.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'backend: no tests yet' && exit 0"
+  },
+  "dependencies": {
+    "@pa/shared-types": "workspace:*",
+    "@pa/rule-engine": "workspace:*"
+  }
+}
