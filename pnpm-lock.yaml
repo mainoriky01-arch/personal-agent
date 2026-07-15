@@ -24,6 +24,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared-types
 
+  packages/intervention-writer:
+    dependencies:
+      '@pa/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
   packages/rule-drafting:
     dependencies:
       '@pa/shared-types':
