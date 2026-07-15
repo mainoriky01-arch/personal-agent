@@ -109,6 +109,36 @@ describe("HTTP API server (real requests, §25)", () => {
     expect(del.status).toBe(200);
   });
 
+  it("PATCH /rules/:id/suspend → disables rule", async () => {
+    const h = await (await fetch(`${base}/habits`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Lettura serale", type: "substitute" }),
+    })).json();
+
+    const draft = await (await fetch(`${base}/chat/draft`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "leggere alle 21" }),
+    })).json();
+
+    const rule = await (await fetch(`${base}/rules/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ habitId: h.data.id, proposal: draft.data.proposal }),
+    })).json();
+
+    const res = await fetch(`${base}/rules/${rule.data.id}/suspend`, { method: "PATCH" });
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.enabled).toBe(false);
+  });
+
+  it("PATCH /rules/:id/suspend with unknown id → 404", async () => {
+    const res = await fetch(`${base}/rules/nonexistent-id/suspend`, { method: "PATCH" });
+    expect(res.status).toBe(404);
+  });
+
   it("unknown route → 404", async () => {
     const res = await fetch(`${base}/nope`);
     expect(res.status).toBe(404);

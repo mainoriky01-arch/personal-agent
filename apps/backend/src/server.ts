@@ -78,6 +78,12 @@ export function createApiServer(api: Api): Server {
         return send(res, r.status, r);
       }
 
+      if (method === "PATCH" && path.startsWith("/rules/") && path.endsWith("/suspend")) {
+        const id = path.slice("/rules/".length, -"/suspend".length);
+        const r = api.suspendRule(id);
+        return send(res, r.status, r);
+      }
+
       return send(res, 404, { ok: false, error: "not_found" });
     } catch (e) {
       return send(res, 500, { ok: false, error: (e as Error).message });
