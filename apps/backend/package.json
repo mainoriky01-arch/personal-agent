@@ -8,13 +8,18 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "tsx src/main.ts"
   },
   "dependencies": {
-    "@pa/shared-types": "workspace:*",
-    "@pa/rule-engine": "workspace:*",
-    "@pa/rule-drafting": "workspace:*",
+    "@electric-sql/pglite": "^0.5.4",
+    "@pa/intervention-service": "workspace:*",
     "@pa/intervention-writer": "workspace:*",
-    "@pa/intervention-service": "workspace:*"
+    "@pa/rule-drafting": "workspace:*",
+    "@pa/rule-engine": "workspace:*",
+    "@pa/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
   }
 }

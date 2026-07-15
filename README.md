@@ -13,11 +13,23 @@ personal-agent/
 │   ├── intervention-writer/  ✅ messaggi + Safety Layer (§19, §27.5) — 16 test
 │   └── intervention-service/ ✅ orchestratore end-to-end (§23.5) — 9 test
 └── apps/
-    └── backend/              ✅ schema SQL + repos + API + AI orchestration
-                                 (§23-25) — 11 test
+    └── backend/              ✅ SQL reale (PGlite) + repos + server HTTP + API
+                                 + AI orchestration (§23-25) — 21 test
 
-78 test verdi · typecheck pulito su 6 package
+88 test verdi · typecheck pulito su 6 package
 ```
+
+## Avviare il backend
+
+```bash
+pnpm --filter @pa/backend dev     # server HTTP su http://127.0.0.1:8788
+curl http://127.0.0.1:8788/health # → {"status":"ok"}
+```
+
+Il backend usa **PGlite** (Postgres vero compilato in WASM, in-process): lo
+schema in `apps/backend/src/db/schema.sql` gira identico qui e su un Postgres di
+produzione. Le repository (`PgSessionRepo`) usano SQL reale, testato via PGlite.
+Per la produzione si sostituisce `new PGlite()` con un `pg.Pool` — stesso SQL.
 
 ## Il cuore: `@pa/rule-engine`
 
