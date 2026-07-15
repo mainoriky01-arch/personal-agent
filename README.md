@@ -7,15 +7,17 @@ Behavioural agent (spec v1.0). Monorepo pnpm, struttura da spec §22.5.
 ```
 personal-agent/
 ├── packages/
-│   ├── shared-types/     ✅ modello dominio (spec §8, §24) — 100% tipizzato
-│   └── rule-engine/      ✅ motore deterministico (§13-15, §42.4) — 23 test verdi
+│   ├── shared-types/         ✅ modello dominio (spec §8, §24)
+│   ├── rule-engine/          ✅ motore deterministico (§13-15) — 23 test
+│   ├── rule-drafting/        ✅ testo → bozza validata (§12, §27) — 19 test
+│   ├── intervention-writer/  ✅ messaggi + Safety Layer (§19, §27.5) — 16 test
+│   └── intervention-service/ ✅ orchestratore end-to-end (§23.5) — 9 test
 └── apps/
-    └── backend/          🟡 skeleton servizi (§23) — solo struttura, non implementato
-```
+    └── backend/              ✅ schema SQL + repos + API + AI orchestration
+                                 (§23-25) — 11 test
 
-Da aggiungere in seguito (spec §22.5): `apps/mobile` (React Native),
-`packages/ai-prompts`, `packages/ui`, `native/ios` (→ vedi prototipo Fase 0 separato),
-`native/android`, `infrastructure`, `docs`.
+78 test verdi · typecheck pulito su 6 package
+```
 
 ## Il cuore: `@pa/rule-engine`
 

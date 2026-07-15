@@ -17,6 +17,15 @@ importers:
 
   apps/backend:
     dependencies:
+      '@pa/intervention-service':
+        specifier: workspace:*
+        version: link:../../packages/intervention-service
+      '@pa/intervention-writer':
+        specifier: workspace:*
+        version: link:../../packages/intervention-writer
+      '@pa/rule-drafting':
+        specifier: workspace:*
+        version: link:../../packages/rule-drafting
       '@pa/rule-engine':
         specifier: workspace:*
         version: link:../../packages/rule-engine

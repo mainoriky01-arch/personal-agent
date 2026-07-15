@@ -3,13 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Backend skeleton — services scaffolded per spec §23. NOT implemented; structure only.",
+  "description": "Backend — services per spec §23, API per §25. In-memory repos + pure handlers, testable without Postgres.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'backend: no tests yet' && exit 0"
+    "test": "vitest run"
   },
   "dependencies": {
     "@pa/shared-types": "workspace:*",
-    "@pa/rule-engine": "workspace:*"
+    "@pa/rule-engine": "workspace:*",
+    "@pa/rule-drafting": "workspace:*",
+    "@pa/intervention-writer": "workspace:*",
+    "@pa/intervention-service": "workspace:*"
   }
 }
