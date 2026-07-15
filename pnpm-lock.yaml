@@ -24,6 +24,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared-types
 
+  packages/intervention-service:
+    dependencies:
+      '@pa/intervention-writer':
+        specifier: workspace:*
+        version: link:../intervention-writer
+      '@pa/rule-engine':
+        specifier: workspace:*
+        version: link:../rule-engine
+      '@pa/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
   packages/intervention-writer:
     dependencies:
       '@pa/shared-types':
