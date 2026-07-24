@@ -2,9 +2,20 @@ import { MemoryStore } from "./repos.js";
 import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
+import { createDb } from "./db/db.js";
+import { ensureDefaultUser } from "./db/default-user.js";
 
 /**
  * Runnable entrypoint. Boots the HTTP API on PORT (default 8788).
+ *
+ * Storage mode is chosen by `PA_DB_PATH`:
+ *   - set   → durable mode: open a file-backed PGlite at that path, apply the
+ *             schema, and ensure the default local user (COD-2 foundation).
+ *   - unset → in-memory mode: the current MemoryStore / InMemorySessionRepo.
+ *
+ * NOTE (COD-2): in durable mode the DB is opened and seeded, but domain entities
+ * (habits/rules/commitments/memory/coach/sessions) still live in the in-memory
+ * store — pg-backed repos land in the follow-up persistence issues.
  *
  * The IntentExtractor here is a minimal keyword stub so the server runs with no
  * API keys. In production this is replaced by the real LLM adapter (spec §23.6).
@@ -21,13 +32,33 @@ const stubExtractor: IntentExtractor = {
   },
 };
 
-const port = Number(process.env.PORT ?? 8788);
-const store = new MemoryStore();
-const ai = new AiOrchestrationService(stubExtractor);
-const api = new Api(store, ai);
-const server = createApiServer(api);
+async function main(): Promise<void> {
+  const port = Number(process.env.PORT ?? 8788);
+  const dbPath = process.env.PA_DB_PATH;
 
-server.listen(port, () => {
+  if (dbPath) {
+    const db = await createDb(dbPath);
+    const userId = await ensureDefaultUser(db);
+    // eslint-disable-next-line no-console
+    console.log(`[pa-backend] durable mode (PGlite file: ${dbPath}) — default user ${userId}`);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log("[pa-backend] in-memory mode (set PA_DB_PATH to enable durable storage)");
+  }
+
+  const store = new MemoryStore();
+  const ai = new AiOrchestrationService(stubExtractor);
+  const api = new Api(store, ai);
+  const server = createApiServer(api);
+
+  server.listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`[pa-backend] listening on http://127.0.0.1:${port}`);
+  });
+}
+
+main().catch((e) => {
   // eslint-disable-next-line no-console
-  console.log(`[pa-backend] listening on http://127.0.0.1:${port}`);
+  console.error("[pa-backend] failed to start:", e);
+  process.exit(1);
 });
