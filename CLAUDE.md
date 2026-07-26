@@ -7,18 +7,29 @@ This file is the authoritative reference for agents working in this repository. 
 ## 1. Global Context & Vision
 
 ### 1.1 Vision
-Personal Agent is a behavioral and educational agent that non-magically monitors digital distractions and applies deterministic state-machine interventions (such as iMessage alarms, nudges, and restrictions) to help Riccardo stay focused and build healthy habits.
+Personal Agent is a behavioral and educational agent that non-magically monitors digital distractions and applies deterministic state-machine interventions (such as push alarms, nudges, and restrictions) to help Riccardo stay focused and build healthy habits. The intervention channel is **push** (delivered through the `Deliverer` port); there is no iMessage channel.
 
 ### 1.2 Current State
-* **Fully Operational:** Pristine TypeScript monorepo with 5 packages and 1 backend. Fully passing test suite (88/88 passing tests).
-  * **Database:** SQL layer powered by PGlite (WASM Postgres running in-process). Real SQL queries are tested and active for `PgSessionRepo`, `PgHabitRepo`, `PgRuleRepo`, and `PgMemoryRepo` inside `apps/backend/src/db/`.
+Assessed against merged `main`, the in-flight PRs, and the persistence backlog (COD-1…COD-4). Keep this section honest: distinguish what actually runs on `main` from what is only proposed in an open PR or still planned.
+
+* **Operational on `main`:** Pristine TypeScript monorepo — 5 packages + 1 backend — with a fully passing Vitest suite.
   * **Deterministic Engine:** `@pa/rule-engine` is a pure function (`decide()`) controlling state-machine transitions (cooldown, quiet hours, sessions, daily budget limits, emergency bypasses) with no hot-path LLM calls.
   * **Rule Drafting:** `@pa/rule-drafting` translates raw input text to validated rule proposals.
   * **Message Synthesis:** `@pa/intervention-writer` contains templates and a deterministic `Safety Layer` blocking negative or discouraging language.
-  * **APIs / Backends:** Pure Node.js `http` web server (no Express/Fastify to keep zero-unnecessary-dependencies) hosting REST endpoints under `apps/backend/src/server.ts` (including `/seatbelt/trigger` for the 15-second iMessage alert loop).
+  * **Database (PGlite):** SQL layer powered by PGlite (WASM Postgres in-process). `createTestDb()` applies `schema.sql` for hermetic integration tests. `PgSessionRepo` (`apps/backend/src/db/pg-session-repo.ts`) is implemented and integration-tested (`pg-repo.test.ts`) but **not yet wired** into the running server. `PgHabitRepo`, `PgRuleRepo`, `PgMemoryRepo`, and `PgCoachRepo` **do not exist yet** — they are delivered by COD-3/COD-4.
+  * **HTTP API:** Pure Node.js `http` server (no Express/Fastify — zero unnecessary dependencies) at `apps/backend/src/server.ts`. Live routes: `GET /health`, `POST /chat/draft`, `POST /habits`, `POST /rules/confirm`, `GET/POST /memory`, `DELETE /memory/:id`, `PATCH /rules/:id/suspend`. All config, memory, and session data currently lives in the in-memory `MemoryStore` / `InMemorySessionRepo`.
+
+* **In-flight (open PRs, not yet merged):**
+  * **COD-1 (PR #2) — push alarm path:** adds `POST /usage` (phone → engine → alarm). It computes `distractionDetected` and drives `InterventionService.handleTick()`, delivering on the **push** channel via a stub `PushDeliverer`. Reviewed: `loop-approved`.
+  * **COD-2 (PR #3) — durable DB foundation:** adds `createDb(path)` (file-backed PGlite + idempotent `schema.sql` bootstrap), a `PA_DB_PATH`-selected durable-vs-in-memory mode, and an idempotent default local user. Domain entities remain in `MemoryStore`. Awaiting review.
+
+* **Planned (agent-ready backlog):**
+  * **COD-3 — persist user config:** real pg repos for habits/commitments/rules/rule_exceptions scoped to the default user, and the matching `Api` handlers made async; HTTP route shapes stay identical.
+  * **COD-4 — persist intervention path + memory + coach:** wire `PgSessionRepo`, add pg memory/coach repos, and make `deleteAccount` wipe durable data.
+
 * **Mocked / Stubbed:**
+  * **Push Delivery:** stub `PushDeliverer` (COD-1) records deliveries in-memory and returns a synthetic id — no real APNs certificates/tokens/retry. This lets the full usage → engine → alarm path run and be tested without device infrastructure.
   * **LLM Calls:** Injected via ports (`IntentExtractor`, `CopyWriter`) in `apps/backend/src/orchestration.ts`. No network-dependent SDK calls exist in the core hot-path.
-  * **iMessage Delivery:** Local shell executing `osascript` targeting Apple Messages (triggers only if `SEATBELT_RECIPIENT` is present; skipped cleanly during tests).
   * **Shield Extensions:** Native OS blocking controls (iOS/macOS Shield clients) are managed by external clients (e.g. `personal-agent-phase0`) communicating via backend API triggers.
 
 ### 1.3 Architecture
@@ -46,7 +57,7 @@ A task is done only when:
 ### 1.6 Test Environment
 * Runs entirely locally, using Vitest.
 * PGlite operates in-process, meaning the real Postgres SQL tests run inside any standard CI environment with zero database setup required.
-* iMessage commands automatically skip live OS actions when `SEATBELT_RECIPIENT` is unset, keeping tests stable and hermetic.
+* Push delivery is an in-memory stub (no network, no APNs), so the full usage → engine → alarm path is exercised end-to-end without device infrastructure or secrets, keeping tests stable and hermetic.
 
 ---
 
