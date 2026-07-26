@@ -70,6 +70,45 @@ const DEFAULT_COACH: CoachProfile = {
   quietHours: [],
 };
 
+const COACH_TONES = ["gentle", "balanced", "direct", "severe", "ironic", "rational", "competitive"] as const;
+const COACH_INTENSITIES = ["light", "balanced", "firm", "extreme"] as const;
+
+/** Validate a raw PUT /coach body into a CoachProfile, or return a reason. */
+function validateCoach(input: unknown): { profile: CoachProfile } | { error: string } {
+  if (typeof input !== "object" || input === null) return { error: "coach_required" };
+  const i = input as Record<string, unknown>;
+  if (!COACH_TONES.includes(i.tone as (typeof COACH_TONES)[number])) return { error: "tone_invalid" };
+  if (!COACH_INTENSITIES.includes(i.intensity as (typeof COACH_INTENSITIES)[number])) return { error: "intensity_invalid" };
+  if (typeof i.maxMessageLength !== "number" || !Number.isFinite(i.maxMessageLength) || i.maxMessageLength <= 0) {
+    return { error: "maxMessageLength_invalid" };
+  }
+  if (typeof i.humor !== "boolean") return { error: "humor_invalid" };
+  if (!Array.isArray(i.bannedWords) || !i.bannedWords.every((w) => typeof w === "string")) {
+    return { error: "bannedWords_invalid" };
+  }
+  if (
+    !Array.isArray(i.quietHours) ||
+    !i.quietHours.every(
+      (q) =>
+        typeof q === "object" && q !== null &&
+        typeof (q as { startHour?: unknown }).startHour === "number" &&
+        typeof (q as { endHour?: unknown }).endHour === "number",
+    )
+  ) {
+    return { error: "quietHours_invalid" };
+  }
+  return {
+    profile: {
+      tone: i.tone as CoachProfile["tone"],
+      intensity: i.intensity as CoachProfile["intensity"],
+      maxMessageLength: i.maxMessageLength,
+      humor: i.humor,
+      bannedWords: i.bannedWords as string[],
+      quietHours: i.quietHours as CoachProfile["quietHours"],
+    },
+  };
+}
+
 const systemClock: Clock = { nowIso: () => new Date().toISOString() };
 
 export class Api {
@@ -248,6 +287,19 @@ export class Api {
     const updated = await this.config.setRuleEnabled(ruleId, false);
     if (!updated) return err(404, "rule_not_found");
     return ok(updated);
+  }
+
+  // §25/§14 — GET /coach : the account's coach profile, or defaults when unset
+  async getCoach(): Promise<ApiResult<CoachProfile>> {
+    return ok((await this.coach.get()) ?? DEFAULT_COACH);
+  }
+
+  // §25/§14 — PUT /coach : validate and persist the coach profile
+  async setCoach(input: unknown): Promise<ApiResult<CoachProfile>> {
+    const v = validateCoach(input);
+    if ("error" in v) return err(400, v.error);
+    await this.coach.set(v.profile);
+    return ok(v.profile);
   }
 
   // §25 — GET /memory
