@@ -103,6 +103,30 @@ them so an absent label does not fail the command:
   `loop-approved` and `loop-changes-requested`; set "Safe to merge" to
   `No — human decision required.`
 
+## 4b. Mirror the verdict onto Linear
+
+The Linear state is the only view a human watching the board sees. Left alone it
+reads `In Review` the moment the builder opens the PR — before this review runs —
+so a reviewer who finds bugs would still leave the issue looking mergeable. Keep
+Linear honest: after setting the labels, update the linked issue (parsed in
+step 2) through the Linear connector so its state always matches the verdict.
+
+- **Approved** (`loop-approved`): leave the issue in the team's review state and
+  comment `✅ Finn-loop review passed on COMMIT_SHA — awaiting human merge. Do
+  not merge until the PR shows the loop-approved label.` If the team has a
+  dedicated post-review state (e.g. `Ready to merge`), move it there instead.
+- **Changes requested** (`loop-changes-requested`): move the issue back to the
+  team's started state (prefer `In Progress`) and comment the must-fix summary
+  with the PR link. It is being repaired by the builder, so it must not sit in
+  the review column looking ready.
+- **Escalation** (`needs-human-review`): leave the issue in the review state and
+  comment that a human decision is required, quoting the exact reason.
+
+Never move the Linear issue to a completed/`Done` state. Done happens only when a
+human merges the PR (`Closes TEAM-NNN` drives the GitHub↔Linear integration).
+So an issue in the review state always means "reviewer approved, waiting for the
+human"; a flagged PR is never parked there.
+
 The escalation path deliberately leaves the automated repair queue. A human
 must resolve the reason, change the issue or repository configuration as
 needed, and remove `needs-human-review` before Finn-loop reviews that unchanged

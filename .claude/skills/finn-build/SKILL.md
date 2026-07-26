@@ -34,8 +34,10 @@ queue until a human resolves the escalation.
 If any PR remains, choose the least recently updated one. Read its linked
 Linear issue and latest `Finn-loop review of COMMIT_SHA` verdict. Check out its
 branch, fix only the "Must fix before merge" items, run the relevant checks,
-push, remove `loop-changes-requested`, and comment with what changed. End this
-pass.
+push, remove `loop-changes-requested`, and comment with what changed. The
+reviewer moved the issue back to the started state when it requested changes, so
+move the linked Linear issue back to the team's review state (prefer `In Review`)
+so the board reflects that it is awaiting review again. End this pass.
 
 If a proposed fix would cross an issue non-goal or requires a product decision,
 do not implement it. Comment the exact conflict, add `needs-human-review`,
