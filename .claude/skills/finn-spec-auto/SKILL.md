@@ -40,20 +40,29 @@ roadmap item, and end the pass.
 ## 3. File one build-ready issue
 
 Create a Linear issue on team `COD`, unassigned, left in the backlog state,
-labeled `agent-ready`, mirroring the `finn-spec` contract so `finn-build` can
-consume it unchanged:
+labeled `agent-ready`, expanding the roadmap item into the **Automated Spec &
+Roadmap Contract in `CLAUDE.md` §3** — that file is the authoritative schema.
+Follow §3.1 (one PR, binary AC, explicit NG) and produce every section of the
+§3.2 schema so `finn-build` can consume it unchanged:
 
-- **Title** — short imperative summary.
-- `## Problem` — why, drawn from the roadmap item.
-- `## Acceptance Criteria` — `AC-1..N`, each independently verifiable.
+- **Title** — the item's active title.
+- `## Problem` — why it is needed now / what is blocked without it.
+- `## Input/Output` — exact input schema, success output, and failure output
+  (specific HTTP codes and reason strings).
+- `## Acceptance Criteria` — `AC-1..N`, each a binary, independently verifiable
+  assertion (no subjective words).
 - `## Non-goals` — `NG-1..N`, binding scope fences.
-- `## Relevant files` — best-effort pointers into the repo.
-- `## Test expectations` — the checks a PR must add or keep green.
-- `## How to verify` — numbered manual steps.
+- `## Constraints` — interfaces to respect, package/style limits.
+- `## Relevant files` — where the code must live.
+- `## Test expectations` — named tests and the assertions they must prove.
+- `## How to verify` — numbered manual CLI/curl steps.
+- `## Risk` — None / impacted components.
 - Final line `Roadmap: <slug>` — the idempotency marker, **required**.
 
-Keep it one-PR-sized. If the roadmap item is clearly several PRs, spec only the
-first slice and note that the rest belongs to later items.
+Respect every §1.4 non-negotiable constraint and the §1.5 definition of "done"
+from `CLAUDE.md`. Keep it one-PR-sized (< 400 lines of diff); if the roadmap item
+is clearly several PRs, spec only the first slice and note the rest belongs to
+later items.
 
 Do not assign it, do not move it out of backlog, and do not open a branch or PR —
 that is `finn-build`'s job on a later orchestrator pass. End the pass.
