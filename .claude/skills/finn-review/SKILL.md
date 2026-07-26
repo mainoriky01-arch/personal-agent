@@ -53,13 +53,20 @@ gh pr view NUMBER --json headRefOid,mergeable,mergeStateStatus
 gh pr checks NUMBER --required --json bucket,name,state,link
 ```
 
-- If required checks are pending or mergeability is still unknown, report that
-  the PR is waiting and end without posting a verdict or changing labels. A
-  later loop pass will retry it.
-- Failed required checks are `[CI]` must-fix findings.
+- **Exclude the `merge-guard` check from this evaluation.** It is not a build/CI
+  signal — it encodes *this* review's own verdict and fails precisely because
+  `loop-approved` is not present yet. Treating it as a blocking required check
+  would deadlock the review: the gate can never turn green, because the approval
+  that greens it is exactly what the red gate would block. Evaluate only genuine
+  build/CI checks (e.g. `verify`).
+- If the genuine required checks are pending or mergeability is still unknown,
+  report that the PR is waiting and end without posting a verdict or changing
+  labels. A later loop pass will retry it.
+- A failed genuine required check (e.g. `verify`) is a `[CI]` must-fix finding.
 - A merge conflict is a `[DEFECT]` must-fix finding.
-- If the repository has no required checks, mark the PR for human escalation;
-  do not apply `loop-approved`. Finn-loop does not treat missing CI as green.
+- If the repository has no genuine required check — only `merge-guard`, or none
+  at all — mark the PR for human escalation; do not apply `loop-approved`.
+  Finn-loop does not treat missing CI as green.
 
 Review the exact `headRefOid` used for this evidence. Re-fetch it immediately
 before posting. If it changed, discard the review and start again on a future
