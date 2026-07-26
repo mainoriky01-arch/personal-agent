@@ -83,9 +83,13 @@ CREATE TABLE IF NOT EXISTS rules (
   escalation                INT[] NOT NULL,
   max_interventions_session INT NOT NULL DEFAULT 3,
   max_interventions_day     INT NOT NULL DEFAULT 8,
+  daily_budget_minutes      INT,             -- optional cumulative daily cap (COD-9)
   enabled                   BOOLEAN NOT NULL DEFAULT true,
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Idempotent add for durable DBs created before COD-9 (CREATE TABLE above is a
+-- no-op once the table exists, so the new column needs its own guarded ALTER).
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS daily_budget_minutes INT;
 CREATE INDEX IF NOT EXISTS idx_rules_habit ON rules(habit_id);
 
 CREATE TABLE IF NOT EXISTS rule_exceptions (
@@ -110,6 +114,17 @@ CREATE TABLE IF NOT EXISTS intervention_sessions (
   UNIQUE (rule_id, date)          -- one live session per rule per day (§8.9 dedup)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_rule_date ON intervention_sessions(rule_id, date);
+
+-- Cumulative daily foreground accounting for the daily-budget criterion (COD-9).
+-- One row per (user, rule, local day); the date column makes the counter reset
+-- automatically at local midnight since a new day is a new row.
+CREATE TABLE IF NOT EXISTS usage_daily (
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rule_id            UUID NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+  date               DATE NOT NULL,
+  foreground_seconds INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, rule_id, date)
+);
 
 CREATE TABLE IF NOT EXISTS interventions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

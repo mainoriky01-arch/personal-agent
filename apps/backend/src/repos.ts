@@ -21,6 +21,7 @@ export class MemoryStore {
   rules = new Map<string, Rule>();
   memory = new Map<string, MemoryItem>();
   coaches = new Map<string, CoachProfile>(); // keyed by userId
+  usageDaily = new Map<string, number>(); // `${ruleId}:${date}` → foreground seconds (COD-9)
 }
 
 /** SessionRepo (port from @pa/intervention-service) backed by memory. */
@@ -172,5 +173,35 @@ export class MemoryCoachRepo implements CoachRepo {
   }
   async deleteAll(): Promise<void> {
     this.store.coaches.clear();
+  }
+}
+
+/**
+ * Cumulative daily foreground accounting for the daily-budget criterion (COD-9).
+ * `addForeground` adds the reported foreground seconds to the (rule, local day)
+ * counter and returns the new running total. Durable in pg mode (survives
+ * restart), in-memory by default. The date is part of the key, so a new local
+ * day starts a fresh counter (AC-3).
+ */
+export interface UsageRepo {
+  addForeground(ruleId: string, date: string, seconds: number): Promise<number>;
+  deleteAll(): Promise<void>;
+}
+
+/** In-memory UsageRepo — the default; wraps `MemoryStore.usageDaily`. */
+export class MemoryUsageRepo implements UsageRepo {
+  constructor(private readonly store: MemoryStore) {}
+
+  private key(ruleId: string, date: string) {
+    return `${ruleId}:${date}`;
+  }
+  async addForeground(ruleId: string, date: string, seconds: number): Promise<number> {
+    const k = this.key(ruleId, date);
+    const total = (this.store.usageDaily.get(k) ?? 0) + seconds;
+    this.store.usageDaily.set(k, total);
+    return total;
+  }
+  async deleteAll(): Promise<void> {
+    this.store.usageDaily.clear();
   }
 }
