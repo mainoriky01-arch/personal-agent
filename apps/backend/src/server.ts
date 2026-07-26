@@ -69,19 +69,19 @@ export function createApiServer(api: Api): Server {
       }
 
       if (method === "GET" && path === "/memory") {
-        const r = api.listMemory(url.searchParams.get("userId") ?? "");
+        const r = await api.listMemory(url.searchParams.get("userId") ?? "");
         return send(res, r.status, r);
       }
 
       if (method === "POST" && path === "/memory") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        const r = api.addMemory(body);
+        const r = await api.addMemory(body);
         return send(res, r.status, r);
       }
 
       if (method === "DELETE" && path.startsWith("/memory/")) {
         const id = path.slice("/memory/".length);
-        const r = api.deleteMemory(id);
+        const r = await api.deleteMemory(id);
         return send(res, r.status, r);
       }
 

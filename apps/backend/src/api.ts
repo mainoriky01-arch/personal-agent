@@ -14,7 +14,15 @@ import type {
   TickSignal,
   Clock,
 } from "@pa/intervention-service";
-import { MemoryConfigRepo, type MemoryStore, type ConfigRepo } from "./repos.js";
+import {
+  MemoryConfigRepo,
+  MemoryMemoryRepo,
+  MemoryCoachRepo,
+  type MemoryStore,
+  type ConfigRepo,
+  type MemoryRepo,
+  type CoachRepo,
+} from "./repos.js";
 import type { AiOrchestrationService } from "./orchestration.js";
 
 /**
@@ -64,9 +72,11 @@ const DEFAULT_COACH: CoachProfile = {
 const systemClock: Clock = { nowIso: () => new Date().toISOString() };
 
 export class Api {
-  /** User config (habits/commitments/rules) persistence. Durable in production
-   * (PgConfigRepo), in-memory by default so existing callers are unchanged. */
+  /** Config/memory/coach persistence. Durable in production (pg repos),
+   * in-memory by default so existing callers are unchanged. */
   private readonly config: ConfigRepo;
+  private readonly memory: MemoryRepo;
+  private readonly coach: CoachRepo;
 
   constructor(
     private readonly store: MemoryStore,
@@ -74,10 +84,14 @@ export class Api {
     /** Wired in production/main.ts; when absent, `POST /usage` is unavailable. */
     private readonly intervention?: InterventionService,
     private readonly clock: Clock = systemClock,
-    /** Durable config repo (COD-3); defaults to an in-memory repo over `store`. */
+    /** Durable repos (COD-3/COD-4); each defaults to an in-memory repo over `store`. */
     config?: ConfigRepo,
+    memory?: MemoryRepo,
+    coach?: CoachRepo,
   ) {
     this.config = config ?? new MemoryConfigRepo(store);
+    this.memory = memory ?? new MemoryMemoryRepo(store);
+    this.coach = coach ?? new MemoryCoachRepo(store);
   }
 
   // §25 — POST /chat/draft : chat text → confirmable rule draft (never activates)
@@ -149,7 +163,7 @@ export class Api {
     const distractionDetected = isTargetApp && foregroundSeconds >= rule.thresholdMinutes * 60;
 
     const habit = await this.config.getHabit(rule.habitId);
-    const coach = [...this.store.coaches.values()][0] ?? DEFAULT_COACH;
+    const coach = (await this.coach.get()) ?? DEFAULT_COACH;
 
     const sig: TickSignal = {
       rule,
@@ -233,36 +247,34 @@ export class Api {
   }
 
   // §25 — GET /memory
-  listMemory(userId: string): ApiResult<MemoryItem[]> {
-    const items = [...this.store.memory.values()].filter(
-      (m) => m.status !== "deleted",
-    );
-    return ok(items);
+  async listMemory(_userId: string): Promise<ApiResult<MemoryItem[]>> {
+    return ok(await this.memory.listActive());
   }
 
   // §25 — POST /memory
-  addMemory(item: Omit<MemoryItem, "id" | "status"> & { status?: MemoryItem["status"] }): ApiResult<MemoryItem> {
+  async addMemory(
+    item: Omit<MemoryItem, "id" | "status"> & { status?: MemoryItem["status"] },
+  ): Promise<ApiResult<MemoryItem>> {
     if (!item.content?.trim()) return err(400, "content_required");
     const mem: MemoryItem = { id: genId("mem"), status: item.status ?? "active", ...item };
-    this.store.memory.set(mem.id, mem);
+    await this.memory.add(mem);
     return ok(mem, 201);
   }
 
   // §25 — DELETE /memory/:id  (user control §18.4)
-  deleteMemory(id: string): ApiResult<{ id: string }> {
-    const mem = this.store.memory.get(id);
-    if (!mem) return err(404, "memory_not_found");
-    this.store.memory.set(id, { ...mem, status: "deleted" });
+  async deleteMemory(id: string): Promise<ApiResult<{ id: string }>> {
+    const removed = await this.memory.softDelete(id);
+    if (!removed) return err(404, "memory_not_found");
     return ok({ id });
   }
 
-  // §25 — DELETE /account  (§26.1 cancellazione account + dati)
-  deleteAccount(userId: string): ApiResult<{ deleted: boolean }> {
-    this.store.habits.clear();
-    this.store.commitments.clear();
-    this.store.rules.clear();
-    this.store.memory.clear();
-    this.store.coaches.delete(userId);
+  // §25 — DELETE /account  (§26.1 cancellazione account + dati). In durable mode
+  // this wipes the user's pg data (habits cascade to commitments/rules/exceptions
+  // and sessions/interventions), memory items and coach profile (AC-4).
+  async deleteAccount(_userId: string): Promise<ApiResult<{ deleted: boolean }>> {
+    await this.config.deleteAll();
+    await this.memory.deleteAll();
+    await this.coach.deleteAll();
     return ok({ deleted: true });
   }
 }
