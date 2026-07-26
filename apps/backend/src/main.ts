@@ -1,5 +1,12 @@
 import { InterventionService, type Clock, type IdGen, type SessionRepo } from "@pa/intervention-service";
-import { MemoryStore, InMemorySessionRepo, type ConfigRepo, type MemoryRepo, type CoachRepo } from "./repos.js";
+import {
+  MemoryStore,
+  InMemorySessionRepo,
+  type ConfigRepo,
+  type MemoryRepo,
+  type CoachRepo,
+  type UsageRepo,
+} from "./repos.js";
 import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js";
 import { PushDeliverer } from "./push-deliverer.js";
 import { Api } from "./api.js";
@@ -9,6 +16,7 @@ import { ensureDefaultUser } from "./db/default-user.js";
 import { PgConfigRepo } from "./db/pg-config-repo.js";
 import { PgMemoryRepo } from "./db/pg-memory-repo.js";
 import { PgCoachRepo } from "./db/pg-coach-repo.js";
+import { PgUsageRepo } from "./db/pg-usage-repo.js";
 import { PgSessionRepo } from "./db/pg-session-repo.js";
 
 /**
@@ -48,6 +56,7 @@ async function main(): Promise<void> {
   let config: ConfigRepo | undefined;
   let memory: MemoryRepo | undefined;
   let coach: CoachRepo | undefined;
+  let usage: UsageRepo | undefined;
   let dbRef: Db | undefined;
   let timezone: string | undefined;
   let sessionRepo: SessionRepo = new InMemorySessionRepo();
@@ -58,6 +67,7 @@ async function main(): Promise<void> {
     config = new PgConfigRepo(db);
     memory = new PgMemoryRepo(db);
     coach = new PgCoachRepo(db);
+    usage = new PgUsageRepo(db);
     sessionRepo = new PgSessionRepo(db);
     // The /usage window is resolved in the user's timezone (COD-7).
     const { rows } = await db.query<{ timezone: string }>(`SELECT timezone FROM users WHERE id = $1`, [userId]);
@@ -80,7 +90,7 @@ async function main(): Promise<void> {
   const ids: IdGen = { next: (prefix) => `${prefix}_${++idSeq}` };
   const intervention = new InterventionService(sessionRepo, clock, new PushDeliverer(), ids);
 
-  const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone);
+  const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone, usage);
   const server = createApiServer(api);
 
   server.listen(port, () => {

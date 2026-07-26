@@ -18,10 +18,12 @@ import {
   MemoryConfigRepo,
   MemoryMemoryRepo,
   MemoryCoachRepo,
+  MemoryUsageRepo,
   type MemoryStore,
   type ConfigRepo,
   type MemoryRepo,
   type CoachRepo,
+  type UsageRepo,
 } from "./repos.js";
 import type { AiOrchestrationService } from "./orchestration.js";
 import type { Db } from "./db/db.js";
@@ -149,6 +151,7 @@ export class Api {
   private readonly config: ConfigRepo;
   private readonly memory: MemoryRepo;
   private readonly coach: CoachRepo;
+  private readonly usage: UsageRepo;
 
   constructor(
     private readonly store: MemoryStore,
@@ -166,10 +169,14 @@ export class Api {
     /** IANA timezone the /usage window is resolved in (COD-7). Durable mode
      * passes the user's `users.timezone`; defaults to Europe/Rome. */
     private readonly timezone: string = DEFAULT_TIMEZONE,
+    /** Cumulative daily foreground counter for the daily-budget criterion
+     * (COD-9); defaults to an in-memory repo over `store`. */
+    usage?: UsageRepo,
   ) {
     this.config = config ?? new MemoryConfigRepo(store);
     this.memory = memory ?? new MemoryMemoryRepo(store);
     this.coach = coach ?? new MemoryCoachRepo(store);
+    this.usage = usage ?? new MemoryUsageRepo(store);
   }
 
   // §25 — POST /chat/draft : chat text → confirmable rule draft (never activates)
@@ -233,9 +240,23 @@ export class Api {
     // ── Threshold decision — the backend is the only brain (AC-2, AC-3) ──
     // foregroundSeconds is the CURRENT continuous foreground streak reported by
     // the phone (it resets to zero on each fresh open); we compare that streak
-    // against the rule's threshold and never accumulate anything server-side.
+    // against the rule's threshold and never accumulate the streak server-side.
     const isTargetApp = rule.interferingApps.includes(appId);
-    const distractionDetected = isTargetApp && foregroundSeconds >= rule.thresholdMinutes * 60;
+    const streakExceeded = foregroundSeconds >= rule.thresholdMinutes * 60;
+
+    // Optional cumulative daily budget (COD-9): when set, add this report's
+    // foreground to the (rule, local day) counter and treat the day as a
+    // distraction once the running total reaches the budget — in addition to the
+    // streak criterion. The counter is keyed by the local `date`, so it resets at
+    // local midnight (AC-3). Only in-window target-app usage is counted, matching
+    // the endpoint's scope.
+    let budgetExceeded = false;
+    if (isTargetApp && rule.dailyBudgetMinutes != null) {
+      const totalSeconds = await this.usage.addForeground(ruleId, date, foregroundSeconds);
+      budgetExceeded = totalSeconds >= rule.dailyBudgetMinutes * 60;
+    }
+
+    const distractionDetected = isTargetApp && (streakExceeded || budgetExceeded);
 
     const habit = await this.config.getHabit(rule.habitId);
     const coach = (await this.coach.get()) ?? DEFAULT_COACH;
@@ -373,6 +394,9 @@ export class Api {
       await this.config.deleteAll();
       await this.memory.deleteAll();
       await this.coach.deleteAll();
+      // In durable mode usage_daily also cascades from the deleted habits/rules;
+      // this keeps the in-memory counter consistent too (COD-9).
+      await this.usage.deleteAll();
     };
     // Durable mode: all three wipes in one transaction so the account deletion is
     // all-or-nothing (COD-5 AC-3). In-memory mode just runs them.

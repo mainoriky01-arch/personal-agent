@@ -51,6 +51,7 @@ interface RuleRow {
   escalation: number[];
   max_interventions_session: number;
   max_interventions_day: number;
+  daily_budget_minutes: number | null;
   enabled: boolean;
 }
 
@@ -132,11 +133,13 @@ export class PgConfigRepo implements ConfigRepo {
       await q.query(
         `INSERT INTO rules
            (id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
-            cooldown_seconds, escalation, max_interventions_session, max_interventions_day, enabled)
-         VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11)`,
+            cooldown_seconds, escalation, max_interventions_session, max_interventions_day,
+            daily_budget_minutes, enabled)
+         VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11,$12)`,
         [
           r.id, r.habitId, r.commitmentId, r.intensity, r.interferingApps, r.thresholdMinutes,
-          r.cooldownSeconds, r.escalation, r.maxInterventionsPerSession, r.maxInterventionsPerDay, r.enabled,
+          r.cooldownSeconds, r.escalation, r.maxInterventionsPerSession, r.maxInterventionsPerDay,
+          r.dailyBudgetMinutes ?? null, r.enabled,
         ],
       );
       for (const e of r.exceptions) {
@@ -152,7 +155,8 @@ export class PgConfigRepo implements ConfigRepo {
   async getRule(id: string): Promise<Rule | null> {
     const { rows } = await this.db.query<RuleRow>(
       `SELECT id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
-              cooldown_seconds, escalation, max_interventions_session, max_interventions_day, enabled
+              cooldown_seconds, escalation, max_interventions_session, max_interventions_day,
+              daily_budget_minutes, enabled
        FROM rules WHERE id = $1`,
       [id],
     );
@@ -179,6 +183,7 @@ export class PgConfigRepo implements ConfigRepo {
       exceptions,
       maxInterventionsPerSession: r.max_interventions_session,
       maxInterventionsPerDay: r.max_interventions_day,
+      dailyBudgetMinutes: r.daily_budget_minutes ?? undefined,
       enabled: r.enabled,
     };
   }

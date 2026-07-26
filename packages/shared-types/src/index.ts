@@ -137,6 +137,12 @@ export interface Rule {
   /** §14.5 hard limits (never fully removable). */
   maxInterventionsPerSession: number;
   maxInterventionsPerDay: number;
+  /**
+   * Optional cumulative daily cap (minutes of foreground use of the interfering
+   * apps, per local day). When set, exceeding it also triggers a distraction —
+   * on top of the continuous-streak threshold. Absent → streak-only behavior.
+   */
+  dailyBudgetMinutes?: number;
   enabled: boolean;
 }
 
