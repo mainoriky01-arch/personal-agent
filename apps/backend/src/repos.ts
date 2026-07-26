@@ -55,3 +55,54 @@ export class InMemorySessionRepo implements SessionRepo {
     return [...this.interventions];
   }
 }
+
+/**
+ * Config persistence port for user config (§8 habits/commitments/rules). The Api
+ * writes/reads config through this, so durable mode can swap the in-memory
+ * implementation for a pg-backed one (COD-3) without changing handler logic.
+ * Memory/coach/sessions stay on `MemoryStore`/`InMemorySessionRepo` for now.
+ */
+export interface ConfigRepo {
+  createHabit(h: Habit): Promise<Habit>;
+  getHabit(id: string): Promise<Habit | null>;
+  createCommitment(c: Commitment, habitId: string): Promise<Commitment>;
+  getCommitment(id: string): Promise<Commitment | null>;
+  createRule(r: Rule): Promise<Rule>;
+  getRule(id: string): Promise<Rule | null>;
+  setRuleEnabled(id: string, enabled: boolean): Promise<Rule | null>;
+}
+
+/** In-memory ConfigRepo — the default; wraps a `MemoryStore` so behaviour is
+ * identical to the pre-COD-3 direct-store access. */
+export class MemoryConfigRepo implements ConfigRepo {
+  constructor(private readonly store: MemoryStore) {}
+
+  async createHabit(h: Habit): Promise<Habit> {
+    this.store.habits.set(h.id, h);
+    return h;
+  }
+  async getHabit(id: string): Promise<Habit | null> {
+    return this.store.habits.get(id) ?? null;
+  }
+  async createCommitment(c: Commitment, _habitId: string): Promise<Commitment> {
+    this.store.commitments.set(c.id, c);
+    return c;
+  }
+  async getCommitment(id: string): Promise<Commitment | null> {
+    return this.store.commitments.get(id) ?? null;
+  }
+  async createRule(r: Rule): Promise<Rule> {
+    this.store.rules.set(r.id, r);
+    return r;
+  }
+  async getRule(id: string): Promise<Rule | null> {
+    return this.store.rules.get(id) ?? null;
+  }
+  async setRuleEnabled(id: string, enabled: boolean): Promise<Rule | null> {
+    const r = this.store.rules.get(id);
+    if (!r) return null;
+    const updated = { ...r, enabled };
+    this.store.rules.set(id, updated);
+    return updated;
+  }
+}

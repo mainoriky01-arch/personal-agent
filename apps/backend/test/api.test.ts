@@ -47,7 +47,7 @@ describe("Backend API — full chat → confirm → active rule flow (§25, §42
   });
 
   it("createHabit then confirmRule produces an enabled rule", async () => {
-    const habit = api.createHabit({
+    const habit = await api.createHabit({
       title: "Lettura serale",
       type: "substitute",
       motivation: completeIntent.motivation,
@@ -58,7 +58,7 @@ describe("Backend API — full chat → confirm → active rule flow (§25, §42
     const draft = await api.draftRule("voglio leggere alle 21");
     if (draft.data!.status !== "complete") throw new Error("expected complete draft");
 
-    const rule = api.confirmRule(habit.data!.id, draft.data!.proposal);
+    const rule = await api.confirmRule(habit.data!.id, draft.data!.proposal);
     expect(rule.ok).toBe(true);
     expect(rule.data!.enabled).toBe(true);
     expect(rule.data!.escalation).toContain(InterventionLevel.Restriction);
@@ -68,7 +68,7 @@ describe("Backend API — full chat → confirm → active rule flow (§25, §42
     expect(commitment!.confirmedByUser).toBe(true);
   });
 
-  it("confirmRule on a missing habit → 404", () => {
+  it("confirmRule on a missing habit → 404", async () => {
     const fakeProposal = {
       goal: "x",
       habitType: "build" as const,
@@ -85,16 +85,16 @@ describe("Backend API — full chat → confirm → active rule flow (§25, §42
       maxInterventionsPerDay: 8,
       exceptions: [],
     };
-    const res = api.confirmRule("nope", fakeProposal);
+    const res = await api.confirmRule("nope", fakeProposal);
     expect(res.status).toBe(404);
   });
 
   it("suspendRule disables an active rule", async () => {
-    const habit = api.createHabit({ title: "H", type: "build" });
+    const habit = await api.createHabit({ title: "H", type: "build" });
     const draft = await api.draftRule("x");
     if (draft.data!.status !== "complete") throw new Error("expected complete");
-    const rule = api.confirmRule(habit.data!.id, draft.data!.proposal);
-    const res = api.suspendRule(rule.data!.id);
+    const rule = await api.confirmRule(habit.data!.id, draft.data!.proposal);
+    const res = await api.suspendRule(rule.data!.id);
     expect(res.data!.enabled).toBe(false);
   });
 });
@@ -135,8 +135,8 @@ describe("Backend API — memory CRUD (§18.4)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("deleteAccount wipes all user data (§26.1)", () => {
-    api.createHabit({ title: "H", type: "build" });
+  it("deleteAccount wipes all user data (§26.1)", async () => {
+    await api.createHabit({ title: "H", type: "build" });
     api.addMemory({
       content: "x",
       category: "goal",
