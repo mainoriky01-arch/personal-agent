@@ -111,6 +111,38 @@ function validateCoach(input: unknown): { profile: CoachProfile } | { error: str
 
 const systemClock: Clock = { nowIso: () => new Date().toISOString() };
 
+const DEFAULT_TIMEZONE = "Europe/Rome";
+const WEEKDAY: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/**
+ * Resolve the window position (minute-of-day, day-of-week, local ISO date) of an
+ * instant in a given IANA timezone. Uses `Intl.DateTimeFormat` (no heavy tz
+ * library, DST handled by the runtime) — §23.2.
+ */
+function localWindowPosition(iso: string, timeZone: string): {
+  minuteOfDay: number;
+  dayOfWeek: number;
+  date: string;
+} {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(iso));
+  const val = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const hour = Number(val("hour")) % 24; // Intl can emit "24" at local midnight
+  return {
+    minuteOfDay: hour * 60 + Number(val("minute")),
+    dayOfWeek: WEEKDAY[val("weekday")] ?? 0,
+    date: `${val("year")}-${val("month")}-${val("day")}`,
+  };
+}
+
 export class Api {
   /** Config/memory/coach persistence. Durable in production (pg repos),
    * in-memory by default so existing callers are unchanged. */
@@ -131,6 +163,9 @@ export class Api {
     /** Shared durable Db (COD-5) — enables atomic cross-repo writes like the
      * account wipe. Absent in memory mode. */
     private readonly db?: Db,
+    /** IANA timezone the /usage window is resolved in (COD-7). Durable mode
+     * passes the user's `users.timezone`; defaults to Europe/Rome. */
+    private readonly timezone: string = DEFAULT_TIMEZONE,
   ) {
     this.config = config ?? new MemoryConfigRepo(store);
     this.memory = memory ?? new MemoryMemoryRepo(store);
@@ -174,15 +209,12 @@ export class Api {
     if (!rule) return err(404, "rule_not_found");
 
     // ── Resolve "now" and the local window position ─────────────────
-    // atIso is the phone's report time; window position is derived from it. For
-    // the in-memory backend we resolve minute-of-day/day-of-week in UTC — real
-    // per-user timezone resolution is UserProfileService's job (§23.2).
+    // atIso is the phone's report time; the window position is derived from it in
+    // the user's timezone (§23.2).
     const now = atIso ?? this.clock.nowIso();
-    const at = new Date(now);
-    if (Number.isNaN(at.getTime())) return err(400, "atIso_invalid");
-    const minuteOfDay = at.getUTCHours() * 60 + at.getUTCMinutes();
-    const dayOfWeek = at.getUTCDay();
-    const date = at.toISOString().slice(0, 10);
+    if (Number.isNaN(new Date(now).getTime())) return err(400, "atIso_invalid");
+    // Window position is resolved in the user's timezone, not UTC (COD-7).
+    const { minuteOfDay, dayOfWeek, date } = localWindowPosition(now, this.timezone);
 
     const commitment = await this.config.getCommitment(rule.commitmentId);
     const inTimeWindow = commitment

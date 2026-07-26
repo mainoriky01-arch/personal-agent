@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   let memory: MemoryRepo | undefined;
   let coach: CoachRepo | undefined;
   let dbRef: Db | undefined;
+  let timezone: string | undefined;
   let sessionRepo: SessionRepo = new InMemorySessionRepo();
   if (dbPath) {
     const db = await createDb(dbPath);
@@ -58,8 +59,11 @@ async function main(): Promise<void> {
     memory = new PgMemoryRepo(db);
     coach = new PgCoachRepo(db);
     sessionRepo = new PgSessionRepo(db);
+    // The /usage window is resolved in the user's timezone (COD-7).
+    const { rows } = await db.query<{ timezone: string }>(`SELECT timezone FROM users WHERE id = $1`, [userId]);
+    timezone = rows[0]?.timezone;
     // eslint-disable-next-line no-console
-    console.log(`[pa-backend] durable mode (PGlite file: ${dbPath}) — default user ${userId}`);
+    console.log(`[pa-backend] durable mode (PGlite file: ${dbPath}) — default user ${userId} (tz ${timezone})`);
   } else {
     // eslint-disable-next-line no-console
     console.log("[pa-backend] in-memory mode (set PA_DB_PATH to enable durable storage)");
@@ -76,7 +80,7 @@ async function main(): Promise<void> {
   const ids: IdGen = { next: (prefix) => `${prefix}_${++idSeq}` };
   const intervention = new InterventionService(sessionRepo, clock, new PushDeliverer(), ids);
 
-  const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef);
+  const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone);
   const server = createApiServer(api);
 
   server.listen(port, () => {

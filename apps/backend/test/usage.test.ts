@@ -31,8 +31,9 @@ class FakeExtractor implements IntentExtractor {
   }
 }
 
-// Report time: Tue 2026-07-14 21:03 UTC — inside a 21:00–21:30 window.
-const NOW = "2026-07-14T21:03:00Z";
+// Report time: Tue 2026-07-14 19:03 UTC = 21:03 Europe/Rome (CEST) — inside the
+// 21:00–21:30 window once resolved in the user's timezone (COD-7 default).
+const NOW = "2026-07-14T19:03:00Z";
 
 function setup(opts: { enabled?: boolean } = {}) {
   const store = new MemoryStore();
@@ -108,7 +109,7 @@ describe("POST /usage — ingestion → engine → push alarm (COD-1)", () => {
 
   it("outside the window → no alarm (AC-5)", async () => {
     const { api, push } = setup();
-    // Same day, 10:00 UTC — well outside 21:00–21:30.
+    // Same day, 10:00 UTC = 12:00 Europe/Rome — well outside 21:00–21:30.
     const r = await api.ingestUsage({
       ruleId: "r1",
       appId: "instagram",
