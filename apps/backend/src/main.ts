@@ -4,7 +4,7 @@ import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js
 import { PushDeliverer } from "./push-deliverer.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
-import { createDb } from "./db/db.js";
+import { createDb, type Db } from "./db/db.js";
 import { ensureDefaultUser } from "./db/default-user.js";
 import { PgConfigRepo } from "./db/pg-config-repo.js";
 import { PgMemoryRepo } from "./db/pg-memory-repo.js";
@@ -48,10 +48,12 @@ async function main(): Promise<void> {
   let config: ConfigRepo | undefined;
   let memory: MemoryRepo | undefined;
   let coach: CoachRepo | undefined;
+  let dbRef: Db | undefined;
   let sessionRepo: SessionRepo = new InMemorySessionRepo();
   if (dbPath) {
     const db = await createDb(dbPath);
     const userId = await ensureDefaultUser(db);
+    dbRef = db;
     config = new PgConfigRepo(db);
     memory = new PgMemoryRepo(db);
     coach = new PgCoachRepo(db);
@@ -74,7 +76,7 @@ async function main(): Promise<void> {
   const ids: IdGen = { next: (prefix) => `${prefix}_${++idSeq}` };
   const intervention = new InterventionService(sessionRepo, clock, new PushDeliverer(), ids);
 
-  const api = new Api(store, ai, intervention, clock, config, memory, coach);
+  const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef);
   const server = createApiServer(api);
 
   server.listen(port, () => {

@@ -19,6 +19,12 @@ export interface Db {
     sql: string,
     params?: unknown[],
   ): Promise<{ rows: T[] }>;
+  /**
+   * Run `fn` inside a single transaction (BEGIN/COMMIT, ROLLBACK on throw). The
+   * callback's queries — whether via the passed `Db` or a repo that shares this
+   * connection — are atomic: either all commit or none do. Not re-entrant.
+   */
+  tx<T>(fn: (db: Db) => Promise<T>): Promise<T>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,10 +41,24 @@ export function loadSchemaSql(): string {
  */
 async function bootstrap(pg: PGlite): Promise<Db & { close: () => Promise<void> }> {
   await pg.exec(loadSchemaSql());
-  return {
+  const db: Db & { close: () => Promise<void> } = {
     query: (sql, params) => pg.query(sql, params) as Promise<{ rows: any[] }>,
+    // PGlite is a single in-process connection, so BEGIN/COMMIT on it wraps every
+    // query run before the COMMIT — including repo calls that share this `db`.
+    tx: async (fn) => {
+      await pg.query("BEGIN");
+      try {
+        const result = await fn(db);
+        await pg.query("COMMIT");
+        return result;
+      } catch (e) {
+        await pg.query("ROLLBACK");
+        throw e;
+      }
+    },
     close: () => pg.close(),
   };
+  return db;
 }
 
 /** Create an ephemeral in-process Postgres (PGlite) with the schema applied. */
