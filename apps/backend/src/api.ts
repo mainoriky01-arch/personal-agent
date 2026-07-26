@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type Habit,
   type Rule,
@@ -13,7 +14,7 @@ import type {
   TickSignal,
   Clock,
 } from "@pa/intervention-service";
-import type { MemoryStore } from "./repos.js";
+import { MemoryConfigRepo, type MemoryStore, type ConfigRepo } from "./repos.js";
 import type { AiOrchestrationService } from "./orchestration.js";
 
 /**
@@ -45,8 +46,10 @@ export interface UsageResult {
 const ok = <T>(data: T, status = 200): ApiResult<T> => ({ ok: true, status, data });
 const err = (status: number, error: string): ApiResult<never> => ({ ok: false, status, error });
 
-let seq = 0;
-const genId = (p: string) => `${p}_${++seq}`;
+// Ids are UUIDs: the durable schema (schema.sql) keys every table on UUID, so
+// generated ids must be valid UUIDs to persist in pg mode (and stay opaque in
+// memory mode). The prefix argument is kept only for call-site readability.
+const genId = (_prefix: string) => randomUUID();
 
 /** Fallback coach when the user has no stored profile (§14 defaults). */
 const DEFAULT_COACH: CoachProfile = {
@@ -61,13 +64,21 @@ const DEFAULT_COACH: CoachProfile = {
 const systemClock: Clock = { nowIso: () => new Date().toISOString() };
 
 export class Api {
+  /** User config (habits/commitments/rules) persistence. Durable in production
+   * (PgConfigRepo), in-memory by default so existing callers are unchanged. */
+  private readonly config: ConfigRepo;
+
   constructor(
     private readonly store: MemoryStore,
     private readonly ai: AiOrchestrationService,
     /** Wired in production/main.ts; when absent, `POST /usage` is unavailable. */
     private readonly intervention?: InterventionService,
     private readonly clock: Clock = systemClock,
-  ) {}
+    /** Durable config repo (COD-3); defaults to an in-memory repo over `store`. */
+    config?: ConfigRepo,
+  ) {
+    this.config = config ?? new MemoryConfigRepo(store);
+  }
 
   // §25 — POST /chat/draft : chat text → confirmable rule draft (never activates)
   async draftRule(text: string) {
@@ -102,7 +113,7 @@ export class Api {
 
     if (!this.intervention) return err(503, "intervention_service_unavailable");
 
-    const rule = this.store.rules.get(ruleId);
+    const rule = await this.config.getRule(ruleId);
     if (!rule) return err(404, "rule_not_found");
 
     // ── Resolve "now" and the local window position ─────────────────
@@ -116,7 +127,7 @@ export class Api {
     const dayOfWeek = at.getUTCDay();
     const date = at.toISOString().slice(0, 10);
 
-    const commitment = this.store.commitments.get(rule.commitmentId);
+    const commitment = await this.config.getCommitment(rule.commitmentId);
     const inTimeWindow = commitment
       ? isWithinWindow(minuteOfDay, commitment.startMinuteOfDay, commitment.endMinuteOfDay)
       : false;
@@ -137,7 +148,7 @@ export class Api {
     const isTargetApp = rule.interferingApps.includes(appId);
     const distractionDetected = isTargetApp && foregroundSeconds >= rule.thresholdMinutes * 60;
 
-    const habit = this.store.habits.get(rule.habitId);
+    const habit = await this.config.getHabit(rule.habitId);
     const coach = [...this.store.coaches.values()][0] ?? DEFAULT_COACH;
 
     const sig: TickSignal = {
@@ -170,16 +181,18 @@ export class Api {
   }
 
   // §25 — POST /habits : create a habit
-  createHabit(input: Omit<Habit, "id" | "status"> & { status?: Habit["status"] }): ApiResult<Habit> {
+  async createHabit(
+    input: Omit<Habit, "id" | "status"> & { status?: Habit["status"] },
+  ): Promise<ApiResult<Habit>> {
     if (!input.title?.trim()) return err(400, "title_required");
     const habit: Habit = { id: genId("habit"), status: input.status ?? "active", ...input };
-    this.store.habits.set(habit.id, habit);
+    await this.config.createHabit(habit);
     return ok(habit, 201);
   }
 
   // §25 — POST /rules/confirm : turn a confirmed proposal into an active rule (§42.3)
-  confirmRule(habitId: string, proposal: RuleProposal): ApiResult<Rule> {
-    const habit = this.store.habits.get(habitId);
+  async confirmRule(habitId: string, proposal: RuleProposal): Promise<ApiResult<Rule>> {
+    const habit = await this.config.getHabit(habitId);
     if (!habit) return err(404, "habit_not_found");
 
     const commitment: Commitment = {
@@ -190,9 +203,9 @@ export class Api {
       endMinuteOfDay: proposal.endMinuteOfDay,
       durationMinutes: proposal.durationMinutes,
       version: 1,
-      confirmedByUser: true, // this endpoint IS the user confirmation
+      confirmedByUser: true, // this endpoint IS the user confirmation (§42.3)
     };
-    this.store.commitments.set(commitment.id, commitment);
+    await this.config.createCommitment(commitment, habitId);
 
     const rule: Rule = {
       id: genId("rule"),
@@ -203,21 +216,19 @@ export class Api {
       thresholdMinutes: proposal.thresholdMinutes,
       cooldownSeconds: proposal.cooldownSeconds,
       escalation: proposal.escalation,
-      exceptions: proposal.exceptions,
+      exceptions: proposal.exceptions, // persisted as rule_exceptions (AC-4)
       maxInterventionsPerSession: proposal.maxInterventionsPerSession,
       maxInterventionsPerDay: proposal.maxInterventionsPerDay,
       enabled: true,
     };
-    this.store.rules.set(rule.id, rule);
+    await this.config.createRule(rule);
     return ok(rule, 201);
   }
 
   // §25 — PATCH /rules/:id/suspend
-  suspendRule(ruleId: string): ApiResult<Rule> {
-    const rule = this.store.rules.get(ruleId);
-    if (!rule) return err(404, "rule_not_found");
-    const updated = { ...rule, enabled: false };
-    this.store.rules.set(ruleId, updated);
+  async suspendRule(ruleId: string): Promise<ApiResult<Rule>> {
+    const updated = await this.config.setRuleEnabled(ruleId, false);
+    if (!updated) return err(404, "rule_not_found");
     return ok(updated);
   }
 

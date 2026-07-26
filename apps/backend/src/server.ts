@@ -52,13 +52,13 @@ export function createApiServer(api: Api): Server {
 
       if (method === "POST" && path === "/habits") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        const r = api.createHabit(body);
+        const r = await api.createHabit(body);
         return send(res, r.status, r);
       }
 
       if (method === "POST" && path === "/rules/confirm") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        const r = api.confirmRule(body.habitId, body.proposal);
+        const r = await api.confirmRule(body.habitId, body.proposal);
         return send(res, r.status, r);
       }
 
@@ -87,7 +87,7 @@ export function createApiServer(api: Api): Server {
 
       if (method === "PATCH" && path.startsWith("/rules/") && path.endsWith("/suspend")) {
         const id = path.slice("/rules/".length, -"/suspend".length);
-        const r = api.suspendRule(id);
+        const r = await api.suspendRule(id);
         return send(res, r.status, r);
       }
 
