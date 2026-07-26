@@ -1,0 +1,63 @@
+name: merge-guard
+
+# Hard gate that ties GitHub's mergeability to the Finn-loop review verdict.
+# Mark the `merge-guard` job as a required status check on the default branch so
+# a PR literally cannot be merged unless the reviewer has approved this exact
+# commit. This closes the footgun where an issue reads "In Review" on Linear but
+# the PR was actually flagged with bugs.
+#
+# Verdict → gate:
+#   loop-approved present, no blocking label  → pass  (human may merge)
+#   loop-changes-requested present            → fail  (reviewer found must-fix)
+#   needs-human-review present                → fail  (escalated to a human)
+#   no loop-approved                          → fail  (not reviewed yet)
+#   new commit pushed (synchronize)           → clears stale loop-approved, fails
+#                                               until the reviewer re-approves it
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  merge-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate Finn-loop merge gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          echo "action=$ACTION labels=[$LABELS]"
+
+          # A new commit invalidates any prior approval. Clear the stale label and
+          # block until Finn-loop re-reviews this exact commit.
+          if [ "$ACTION" = "synchronize" ]; then
+            gh pr edit "$PR" --repo "$REPO" --remove-label loop-approved || true
+            echo "::error::New commit pushed — prior loop-approved cleared. Awaiting Finn-loop re-review."
+            exit 1
+          fi
+
+          case ",$LABELS," in
+            *,loop-changes-requested,*)
+              echo "::error::Reviewer requested changes (loop-changes-requested). Merge blocked until fixed and re-approved."
+              exit 1 ;;
+          esac
+          case ",$LABELS," in
+            *,needs-human-review,*)
+              echo "::error::Escalated to a human (needs-human-review). Merge blocked until resolved."
+              exit 1 ;;
+          esac
+          case ",$LABELS," in
+            *,loop-approved,*)
+              echo "Finn-loop approved this commit and no blocking label is present — merge gate open." ;;
+            *)
+              echo "::error::Not yet approved by Finn-loop (loop-approved absent). Merge blocked."
+              exit 1 ;;
+          esac
