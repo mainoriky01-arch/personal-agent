@@ -240,6 +240,15 @@ export class Api {
     const habit = await this.config.getHabit(rule.habitId);
     const coach = (await this.coach.get()) ?? DEFAULT_COACH;
 
+    // Quiet hours (§14.5): suppress proactive messages when the local time falls
+    // inside any coach band. Bands are hour-granularity {startHour,endHour} and
+    // may wrap past midnight (e.g. 22→7); reuse the engine's window predicate on
+    // the minute-of-day already resolved in the user's timezone (COD-8). Empty
+    // bands (default coach) → never quiet, preserving prior behavior (AC-3).
+    const quietHours = coach.quietHours.some((b) =>
+      isWithinWindow(minuteOfDay, b.startHour * 60, b.endHour * 60),
+    );
+
     const sig: TickSignal = {
       rule,
       coach,
@@ -251,7 +260,7 @@ export class Api {
       habitCompleted: false,
       exceptionActive: rule.exceptions.some((e) => e.date === date),
       coachPaused: false,
-      quietHours: false, // TODO(§14.5): resolve quiet-hours bands via UserProfileService — out of COD-1 scope
+      quietHours, // resolved from coach.quietHours in the user's timezone (COD-8, §14.5)
       emergencyRequested: false,
       goal: habit?.title ?? "",
       motivation: habit?.motivation,
