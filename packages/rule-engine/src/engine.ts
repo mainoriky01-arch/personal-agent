@@ -133,8 +133,8 @@ export function decide(
     return { kind: "prewarn", nextState: "prewarned", level: InterventionLevel.GentleReminder, action: "reminder", reason: "prewindow_reminder" };
   }
 
-  // Window just opened — observe, do not intervene yet.
-  if (ctx.inWindow && (session.state === "scheduled" || session.state === "prewarned")) {
+  // Window open with no distraction yet — observe, do not intervene.
+  if (ctx.inWindow && !ctx.distractionDetected && (session.state === "scheduled" || session.state === "prewarned")) {
     return { kind: "none", nextState: "window_open", level: InterventionLevel.ObserveOnly, reason: "window_open_observing" };
   }
 
@@ -142,8 +142,11 @@ export function decide(
   if (ctx.inWindow && ctx.distractionDetected) {
     // Quiet hours suppress NEW proactive messages (§14.5) but the shield/restriction
     // path may still apply. For simplicity here we gate messaging only.
-    if (session.state === "window_open") {
-      // First contact.
+    // First contact: the distraction may already be present the first time we
+    // see the window (scheduled/prewarned) — e.g. a single above-threshold usage
+    // signal — or right after opening it (window_open). Either way we intervene
+    // immediately (§13.2); there is no mandatory observe-only warm-up tick.
+    if (session.state === "scheduled" || session.state === "prewarned" || session.state === "window_open") {
       const first = rule.escalation[0] ?? InterventionLevel.ContextualNudge;
       return { kind: "intervene", nextState: "intervened", level: first, action: actionForLevel(first), reason: "first_distraction_contact" };
     }

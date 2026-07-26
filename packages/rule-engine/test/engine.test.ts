@@ -155,6 +155,25 @@ describe("decide — full escalation lifecycle", () => {
     expect(d.nextState).toBe("intervened");
   });
 
+  it("distraction already present on first sight → intervene immediately, no observe-only warm-up", () => {
+    // A single above-threshold usage signal on a fresh (scheduled) session must
+    // fire at once, without a preceding observe-only tick.
+    for (const state of ["scheduled", "prewarned"] as const) {
+      const d = decide(rule, { ...baseSession, state }, { ...baseCtx, distractionDetected: true });
+      expect(d.kind).toBe("intervene");
+      expect(d.level).toBe(InterventionLevel.ContextualNudge);
+      expect(d.nextState).toBe("intervened");
+      expect(d.reason).toBe("first_distraction_contact");
+    }
+  });
+
+  it("in window, no distraction yet → observe only", () => {
+    const d = decide(rule, baseSession, { ...baseCtx, distractionDetected: false });
+    expect(d.kind).toBe("none");
+    expect(d.nextState).toBe("window_open");
+    expect(d.reason).toBe("window_open_observing");
+  });
+
   it("ignored + cooldown elapsed → escalate one rung", () => {
     const session: InterventionSession = {
       ...baseSession,
