@@ -24,6 +24,7 @@ import {
   type CoachRepo,
 } from "./repos.js";
 import type { AiOrchestrationService } from "./orchestration.js";
+import type { Db } from "./db/db.js";
 
 /**
  * API handlers (spec §25). Pure functions over a MemoryStore + services, so they
@@ -88,6 +89,9 @@ export class Api {
     config?: ConfigRepo,
     memory?: MemoryRepo,
     coach?: CoachRepo,
+    /** Shared durable Db (COD-5) — enables atomic cross-repo writes like the
+     * account wipe. Absent in memory mode. */
+    private readonly db?: Db,
   ) {
     this.config = config ?? new MemoryConfigRepo(store);
     this.memory = memory ?? new MemoryMemoryRepo(store);
@@ -272,9 +276,15 @@ export class Api {
   // this wipes the user's pg data (habits cascade to commitments/rules/exceptions
   // and sessions/interventions), memory items and coach profile (AC-4).
   async deleteAccount(_userId: string): Promise<ApiResult<{ deleted: boolean }>> {
-    await this.config.deleteAll();
-    await this.memory.deleteAll();
-    await this.coach.deleteAll();
+    const wipe = async () => {
+      await this.config.deleteAll();
+      await this.memory.deleteAll();
+      await this.coach.deleteAll();
+    };
+    // Durable mode: all three wipes in one transaction so the account deletion is
+    // all-or-nothing (COD-5 AC-3). In-memory mode just runs them.
+    if (this.db) await this.db.tx(wipe);
+    else await wipe();
     return ok({ deleted: true });
   }
 }

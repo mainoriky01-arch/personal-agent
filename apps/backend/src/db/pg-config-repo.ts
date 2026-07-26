@@ -126,22 +126,26 @@ export class PgConfigRepo implements ConfigRepo {
   }
 
   async createRule(r: Rule): Promise<Rule> {
-    await this.db.query(
-      `INSERT INTO rules
-         (id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
-          cooldown_seconds, escalation, max_interventions_session, max_interventions_day, enabled)
-       VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11)`,
-      [
-        r.id, r.habitId, r.commitmentId, r.intensity, r.interferingApps, r.thresholdMinutes,
-        r.cooldownSeconds, r.escalation, r.maxInterventionsPerSession, r.maxInterventionsPerDay, r.enabled,
-      ],
-    );
-    for (const e of r.exceptions) {
-      await this.db.query(
-        `INSERT INTO rule_exceptions (id, rule_id, date, reason) VALUES ($1,$2,$3,$4)`,
-        [e.id, r.id, e.date ?? null, e.reason],
+    // Rule + its rule_exceptions are one atomic unit: a failing exception insert
+    // must not leave an orphan rule behind (COD-5 AC-2).
+    await this.db.tx(async (q) => {
+      await q.query(
+        `INSERT INTO rules
+           (id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
+            cooldown_seconds, escalation, max_interventions_session, max_interventions_day, enabled)
+         VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11)`,
+        [
+          r.id, r.habitId, r.commitmentId, r.intensity, r.interferingApps, r.thresholdMinutes,
+          r.cooldownSeconds, r.escalation, r.maxInterventionsPerSession, r.maxInterventionsPerDay, r.enabled,
+        ],
       );
-    }
+      for (const e of r.exceptions) {
+        await q.query(
+          `INSERT INTO rule_exceptions (id, rule_id, date, reason) VALUES ($1,$2,$3,$4)`,
+          [e.id, r.id, e.date ?? null, e.reason],
+        );
+      }
+    });
     return r;
   }
 
