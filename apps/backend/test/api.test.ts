@@ -108,8 +108,8 @@ describe("Backend API — memory CRUD (§18.4)", () => {
     api = new Api(store, new AiOrchestrationService(new FakeExtractor(completeIntent)));
   });
 
-  it("add, list, and soft-delete memory", () => {
-    const added = api.addMemory({
+  it("add, list, and soft-delete memory", async () => {
+    const added = await api.addMemory({
       content: "Voglio leggere di più",
       category: "goal",
       source: "user_stated",
@@ -118,14 +118,14 @@ describe("Backend API — memory CRUD (§18.4)", () => {
     });
     expect(added.ok).toBe(true);
 
-    expect(api.listMemory("u1").data).toHaveLength(1);
+    expect((await api.listMemory("u1")).data).toHaveLength(1);
 
-    api.deleteMemory(added.data!.id);
-    expect(api.listMemory("u1").data).toHaveLength(0); // soft-deleted hidden
+    await api.deleteMemory(added.data!.id);
+    expect((await api.listMemory("u1")).data).toHaveLength(0); // soft-deleted hidden
   });
 
-  it("rejects empty memory content", () => {
-    const res = api.addMemory({
+  it("rejects empty memory content", async () => {
+    const res = await api.addMemory({
       content: "",
       category: "goal",
       source: "user_stated",
@@ -137,14 +137,14 @@ describe("Backend API — memory CRUD (§18.4)", () => {
 
   it("deleteAccount wipes all user data (§26.1)", async () => {
     await api.createHabit({ title: "H", type: "build" });
-    api.addMemory({
+    await api.addMemory({
       content: "x",
       category: "goal",
       source: "user_stated",
       confidence: 1,
       proactiveUseAllowed: true,
     });
-    const res = api.deleteAccount("u1");
+    const res = await api.deleteAccount("u1");
     expect(res.data!.deleted).toBe(true);
     expect(store.habits.size).toBe(0);
     expect(store.memory.size).toBe(0);

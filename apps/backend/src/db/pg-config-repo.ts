@@ -187,4 +187,10 @@ export class PgConfigRepo implements ConfigRepo {
     if (!rows[0]) return null;
     return this.getRule(id);
   }
+
+  async deleteAll(): Promise<void> {
+    // Deleting the user's habits cascades (schema FKs ON DELETE CASCADE) to
+    // commitments, rules, rule_exceptions, intervention_sessions and interventions.
+    await this.db.query(`DELETE FROM habits WHERE user_id = $1`, [this.userId]);
+  }
 }

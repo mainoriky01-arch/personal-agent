@@ -70,6 +70,9 @@ export interface ConfigRepo {
   createRule(r: Rule): Promise<Rule>;
   getRule(id: string): Promise<Rule | null>;
   setRuleEnabled(id: string, enabled: boolean): Promise<Rule | null>;
+  /** Wipe all config for the account (habits → commitments/rules/exceptions,
+   * and in durable mode the cascaded sessions/interventions). */
+  deleteAll(): Promise<void>;
 }
 
 /** In-memory ConfigRepo — the default; wraps a `MemoryStore` so behaviour is
@@ -104,5 +107,70 @@ export class MemoryConfigRepo implements ConfigRepo {
     const updated = { ...r, enabled };
     this.store.rules.set(id, updated);
     return updated;
+  }
+  async deleteAll(): Promise<void> {
+    this.store.habits.clear();
+    this.store.commitments.clear();
+    this.store.rules.clear();
+  }
+}
+
+/**
+ * Memory persistence port (§18 MemoryItem). Durable in pg mode (COD-4),
+ * in-memory by default. `listActive` hides soft-deleted items.
+ */
+export interface MemoryRepo {
+  add(m: MemoryItem): Promise<MemoryItem>;
+  listActive(): Promise<MemoryItem[]>;
+  /** Soft-delete (status → 'deleted'); returns false when the id is unknown. */
+  softDelete(id: string): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
+/** In-memory MemoryRepo — the default; wraps `MemoryStore.memory`. */
+export class MemoryMemoryRepo implements MemoryRepo {
+  constructor(private readonly store: MemoryStore) {}
+
+  async add(m: MemoryItem): Promise<MemoryItem> {
+    this.store.memory.set(m.id, m);
+    return m;
+  }
+  async listActive(): Promise<MemoryItem[]> {
+    return [...this.store.memory.values()].filter((m) => m.status !== "deleted");
+  }
+  async softDelete(id: string): Promise<boolean> {
+    const m = this.store.memory.get(id);
+    if (!m) return false;
+    this.store.memory.set(id, { ...m, status: "deleted" });
+    return true;
+  }
+  async deleteAll(): Promise<void> {
+    this.store.memory.clear();
+  }
+}
+
+/**
+ * Coach profile persistence port (§14 CoachProfile). Durable in pg mode (COD-4),
+ * in-memory by default. `get` returns the account's profile, or null → caller
+ * falls back to defaults.
+ */
+export interface CoachRepo {
+  get(): Promise<CoachProfile | null>;
+  set(c: CoachProfile): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
+/** In-memory CoachRepo — the default; wraps `MemoryStore.coaches`. */
+export class MemoryCoachRepo implements CoachRepo {
+  constructor(private readonly store: MemoryStore) {}
+
+  async get(): Promise<CoachProfile | null> {
+    return [...this.store.coaches.values()][0] ?? null;
+  }
+  async set(c: CoachProfile): Promise<void> {
+    this.store.coaches.set("local", c);
+  }
+  async deleteAll(): Promise<void> {
+    this.store.coaches.clear();
   }
 }
