@@ -91,6 +91,17 @@ export function createApiServer(api: Api): Server {
         return send(res, r.status, r);
       }
 
+      if (method === "GET" && path === "/coach") {
+        const r = await api.getCoach();
+        return send(res, r.status, r);
+      }
+
+      if (method === "PUT" && path === "/coach") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = await api.setCoach(body);
+        return send(res, r.status, r);
+      }
+
       return send(res, 404, { ok: false, error: "not_found" });
     } catch (e) {
       return send(res, 500, { ok: false, error: (e as Error).message });
