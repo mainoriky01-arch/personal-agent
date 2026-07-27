@@ -113,9 +113,14 @@ CREATE TABLE IF NOT EXISTS intervention_sessions (
   interventions_sent INT NOT NULL DEFAULT 0,
   last_intervention_at TIMESTAMPTZ,
   outcome            TEXT,
+  acknowledged       BOOLEAN NOT NULL DEFAULT false, -- barrage ack (COD-12)
+  last_foreground_seconds INT,                       -- last reported streak (COD-12)
   UNIQUE (rule_id, date)          -- one live session per rule per day (§8.9 dedup)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_rule_date ON intervention_sessions(rule_id, date);
+-- Idempotent adds for durable DBs created before COD-12.
+ALTER TABLE intervention_sessions ADD COLUMN IF NOT EXISTS acknowledged BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE intervention_sessions ADD COLUMN IF NOT EXISTS last_foreground_seconds INT;
 
 -- Cumulative daily foreground accounting for the daily-budget criterion (COD-9).
 -- One row per (user, rule, local day); the date column makes the counter reset

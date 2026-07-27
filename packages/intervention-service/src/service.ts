@@ -51,6 +51,22 @@ export class InterventionService {
       (await this.repo.find(sig.rule.id, sig.date)) ??
       this.newSession(sig);
 
+    // 1b. Ack suspend/resume (COD-12). A live ack suppresses delivery for the
+    // current foreground stay; a "return" — the reported streak dropping vs the
+    // last report, i.e. the app was reopened — clears the ack so the barrage
+    // resumes. We always record the latest streak for the next comparison.
+    if (sig.foregroundSeconds !== undefined) {
+      const prev = session.lastForegroundSeconds;
+      const isReturn = prev !== undefined && sig.foregroundSeconds < prev;
+      if (session.acknowledged && isReturn) session = { ...session, acknowledged: false };
+      session = { ...session, lastForegroundSeconds: sig.foregroundSeconds };
+      if (session.acknowledged) {
+        // Suppressed for this stay — persist the updated streak, deliver nothing.
+        await this.repo.save(session);
+        return { decisionKind: "none", reason: "acknowledged", session };
+      }
+    }
+
     // 2. Deterministic decision.
     const interventionsToday = await this.repo.countInterventionsToday(sig.rule.id, sig.date);
     const ctx: DecisionContext = {
@@ -134,6 +150,25 @@ export class InterventionService {
       intervention,
       messageSource,
     };
+  }
+
+  /**
+   * Acknowledge the barrage for a (rule, day) session (COD-12): mark it so
+   * subsequent in-window ticks of the current stay deliver nothing. The ack is
+   * lifted automatically on the next return (handled in handleTick). Creates a
+   * minimal session if none exists yet. Rule existence is validated upstream.
+   */
+  async acknowledge(ruleId: string, date: string): Promise<void> {
+    const existing = await this.repo.find(ruleId, date);
+    const session: InterventionSession = existing ?? {
+      id: this.ids.next("sess"),
+      ruleId,
+      date,
+      state: "scheduled",
+      level: InterventionLevel.ObserveOnly,
+      interventionsSent: 0,
+    };
+    await this.repo.save({ ...session, acknowledged: true });
   }
 
   private newSession(sig: TickSignal): InterventionSession {

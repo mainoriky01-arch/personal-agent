@@ -172,6 +172,17 @@ export interface InterventionSession {
   interventionsSent: number;
   lastInterventionAt?: string; // ISO — for cooldown math
   outcome?: OutcomeType;
+  /**
+   * User acknowledged the barrage ("I've seen it") — suppress delivery for the
+   * current foreground stay. Cleared automatically on return (COD-12).
+   */
+  acknowledged?: boolean;
+  /**
+   * Last reported continuous foreground streak (seconds) for this session. A
+   * drop vs the previous report means the app was reopened (a "return"), which
+   * clears a live ack so the barrage resumes (COD-12).
+   */
+  lastForegroundSeconds?: number;
 }
 
 /** §24 Intervention */

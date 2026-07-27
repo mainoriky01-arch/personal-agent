@@ -287,6 +287,7 @@ export class Api {
       motivation: habit?.motivation,
       detectedApp: appId,
       minutesElapsed: Math.floor(foregroundSeconds / 60),
+      foregroundSeconds, // drives ack return-detection (COD-12)
       channel: "push",
     };
 
@@ -297,6 +298,20 @@ export class Api {
       delivered: Boolean(result.intervention),
       intervention: result.intervention,
     });
+  }
+
+  // §25 — POST /usage/ack : the user acknowledged the barrage — suspend delivery
+  // for the current foreground stay; it auto-resumes on return (COD-12).
+  async ackUsage(input: { ruleId?: unknown }): Promise<ApiResult<{ acknowledged: boolean }>> {
+    const ruleId = typeof input.ruleId === "string" ? input.ruleId.trim() : "";
+    if (!ruleId) return err(400, "ruleId_required");
+    if (!this.intervention) return err(503, "intervention_service_unavailable");
+    const rule = await this.config.getRule(ruleId);
+    if (!rule) return err(404, "rule_not_found");
+    // Ack targets today's (rule, day) session, resolved in the user's timezone.
+    const { date } = localWindowPosition(this.clock.nowIso(), this.timezone);
+    await this.intervention.acknowledge(ruleId, date);
+    return ok({ acknowledged: true });
   }
 
   // §25 — POST /habits : create a habit

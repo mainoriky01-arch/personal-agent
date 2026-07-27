@@ -25,6 +25,8 @@ interface SessionRow {
   interventions_sent: number;
   last_intervention_at: string | null;
   outcome: string | null;
+  acknowledged: boolean;
+  last_foreground_seconds: number | null;
 }
 
 function rowToSession(r: SessionRow): InterventionSession {
@@ -37,6 +39,8 @@ function rowToSession(r: SessionRow): InterventionSession {
     interventionsSent: r.interventions_sent,
     lastInterventionAt: r.last_intervention_at ?? undefined,
     outcome: (r.outcome ?? undefined) as OutcomeType | undefined,
+    acknowledged: r.acknowledged,
+    lastForegroundSeconds: r.last_foreground_seconds ?? undefined,
   };
 }
 
@@ -46,7 +50,7 @@ export class PgSessionRepo implements SessionRepo {
   async find(ruleId: string, date: string): Promise<InterventionSession | null> {
     const { rows } = await this.db.query<SessionRow>(
       `SELECT id, rule_id, date::text, state, level, interventions_sent,
-              last_intervention_at::text, outcome
+              last_intervention_at::text, outcome, acknowledged, last_foreground_seconds
        FROM intervention_sessions WHERE rule_id = $1 AND date = $2`,
       [ruleId, date],
     );
@@ -57,14 +61,17 @@ export class PgSessionRepo implements SessionRepo {
     // Idempotent upsert keyed on (rule_id, date) — §8.9 one live session/day.
     await this.db.query(
       `INSERT INTO intervention_sessions
-         (id, rule_id, date, state, level, interventions_sent, last_intervention_at, outcome)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         (id, rule_id, date, state, level, interventions_sent, last_intervention_at, outcome,
+          acknowledged, last_foreground_seconds)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (rule_id, date) DO UPDATE SET
          state = EXCLUDED.state,
          level = EXCLUDED.level,
          interventions_sent = EXCLUDED.interventions_sent,
          last_intervention_at = EXCLUDED.last_intervention_at,
-         outcome = EXCLUDED.outcome`,
+         outcome = EXCLUDED.outcome,
+         acknowledged = EXCLUDED.acknowledged,
+         last_foreground_seconds = EXCLUDED.last_foreground_seconds`,
       [
         session.id,
         session.ruleId,
@@ -74,6 +81,8 @@ export class PgSessionRepo implements SessionRepo {
         session.interventionsSent,
         session.lastInterventionAt ?? null,
         session.outcome ?? null,
+        session.acknowledged ?? false,
+        session.lastForegroundSeconds ?? null,
       ],
     );
   }
