@@ -109,47 +109,44 @@ See CLAUDE.md §3.4 for a fully-worked example at the right level of detail.
       Risk: Medio.
       After: llm-intent-adapter
 
-- [ ] (slug: device-register) Registrazione del device token APNs
-      Goal: Un endpoint per registrare/aggiornare il device token APNs dell'utente, così le push reali hanno un destinatario persistito.
-      Problem: `ApnsDeliverer` legge il token da env (COD-10 NG-2): un solo device statico. Per un utente reale il token va registrato dal client e conservato.
-      Input/Output:
-        - Input: `POST /devices { token, platform }` con `platform: "ios"`.
-        - Success Output: 200/201 con device registrato (upsert per (user, token)) nella tabella `devices` esistente.
-        - Failure Output: 400 "token_required" / "platform_invalid".
-      AC:
-        - [ ] AC-1: `POST /devices` fa upsert del token per l'utente di default nella tabella `devices`.
-        - [ ] AC-2: In durable mode il token sopravvive al riavvio (test di persistenza).
-        - [ ] AC-3: Body invalido → 400; `platform` non in {ios} → 400.
-        - [ ] AC-4: Test: registra → persistito → riletto.
-      Out of Scope (Non-goals):
-        - NG-1: Nessuna auth/verifica proprietà del token (single default user).
-        - NG-2: Nessun invio APNs reale nei test.
-        - NG-3: Nessun cablaggio del token dentro `ApnsDeliverer` in questo item (follow-up separato).
-      Constraints: Usare la tabella `devices` già nello schema; nuovo `PgDeviceRepo`; nessun cambio alla logica di rete APNs.
-      Files: apps/backend/src/db/pg-device-repo.ts (nuovo), apps/backend/src/api.ts, apps/backend/src/server.ts, apps/backend/test/*
-      Tests: "device-register": upsert + persistenza durevole; validazioni 400.
-      Verify:
-        1. PA_DB_PATH=./data pnpm --filter @pa/backend dev
-        2. POST /devices con token/platform → 200
-        3. riavvia → il token è ancora presente.
-      Risk: Medio, isolato nella persistenza device.
-      After: (nessuno — APNs COD-10 già merged)
-
 ---
+
+> **Nota architetturale (confine ridefinito — vincolo iOS confermato).** Su iOS
+> il tracking passa **solo** dallo Screen Time API di Apple (on-device): il
+> rilevamento e il blocco (shield) stanno **sul dispositivo**, non sul backend. Il
+> backend NON è più il cervello real-time — fa **config + coach LLM + storico +
+> sync** (vedi `CLAUDE.md §1.7`). Perciò gli item del loop qui sopra sono
+> ri-centrati sull'**agente LLM** (il moat) e sulla config; la push server-driven
+> resta solo un canale *secondario* di nudge remoti, non l'enforcement.
 
 ## Non-loop — di tua competenza (il loop NON può costruirli)
 
 Questi NON sono in formato item (niente `slug`), quindi l'orchestrator li ignora
-di proposito: richiedono lavoro nativo/di ricerca fuori da questo backend.
+di proposito.
 
-- **Spike di fattibilità piattaforma (PRIORITÀ #1).** Verificare, sul repo nativo
-  `personal-agent-phase0`, cosa può realmente fare il client: su iOS il tracking
-  in tempo reale passa solo dallo Screen Time API (FamilyControls/DeviceActivity,
-  on-device, sandboxato) e il "bombardamento push server-driven" rischia di essere
-  infattibile / rifiutato in review. Esito atteso: decidere se detection+shield
-  stanno on-device (probabile) e cosa resta al backend.
-- **Ridefinizione del confine backend/client** in base allo spike (probabile:
-  detection+shield on-device; backend = config, coach, storico, sync).
-- **Auth / multi-utente reale** (Sign in with Apple) — da specificare come item di
-  roadmap solo dopo la decisione sul confine.
+- **Spike Screen Time API (PRIORITÀ #1) — ora è "definire il contratto", non "se è
+  fattibile".** Il vincolo è confermato: solo FamilyControls / DeviceActivity /
+  ManagedSettings, on-device, con token opachi e callback su soglie (non stream
+  real-time). Sul repo nativo `personal-agent-phase0`, determinare esattamente:
+  quali eventi/soglie espone DeviceActivity, come si applica lo shield, e **il
+  contratto device↔backend** (che config scarica il device, che riepiloghi d'uso
+  ri-manda). Da qui escono i candidati backend sotto.
+- **Ridefinizione del confine backend/client** — fatta a livello di visione in
+  `CLAUDE.md §1.7`; i dettagli d'implementazione dipendono dal contratto sopra.
+
+## Candidati backend — da specificare DOPO il contratto del device
+
+Non ancora item perché speccarli ora vorrebbe dire **indovinare** il contratto del
+client (vietato dalla §3 di CLAUDE.md). Diventano item del loop appena lo spike
+fissa le forme esatte:
+
+- **config-sync** — endpoint read con cui il device scarica le sue regole/limiti
+  (autorate dall'agente LLM).
+- **usage-report** — endpoint per riepiloghi d'uso batch dal device → storico
+  (probabile riuso/rimodellazione di `/usage`, non più trigger real-time).
+- **device-register** — registrazione del device token per le push **secondarie**
+  (nudge remoti/coaching); serve solo se useremo push remote oltre allo shield
+  on-device. (Spec bozza già pronta se serve: `POST /devices { token, platform }`,
+  upsert in tabella `devices`.)
+- **auth / multi-utente** (Sign in with Apple) — più avanti (tua indicazione).
 

@@ -7,7 +7,7 @@ This file is the authoritative reference for agents working in this repository. 
 ## 1. Global Context & Vision
 
 ### 1.1 Vision
-Personal Agent is a behavioral and educational agent that non-magically monitors digital distractions and applies deterministic state-machine interventions (such as push alarms, nudges, and restrictions) to help Riccardo stay focused and build healthy habits. The intervention channel is **push** (delivered through the `Deliverer` port); there is no iMessage channel.
+Personal Agent is a behavioral and educational agent that non-magically monitors digital distractions and applies deterministic state-machine interventions to help Riccardo stay focused and build healthy habits. **Monitoring is not magic: on iOS an app cannot read another app's usage — it can only go through Apple's Screen Time API (FamilyControls / DeviceActivity), on-device.** Because of that the *primary* intervention is an **on-device restriction (shield)** applied by the native client through the Screen Time API; **push** (through the `Deliverer` port) is a *secondary, remote* nudge/coaching channel, **not** the enforcement path. There is no iMessage channel.
 
 ### 1.2 Current State
 Assessed against merged `main`, the in-flight PRs, and the persistence backlog (COD-1…COD-4). Keep this section honest: distinguish what actually runs on `main` from what is only proposed in an open PR or still planned.
@@ -58,6 +58,14 @@ A task is done only when:
 * Runs entirely locally, using Vitest.
 * PGlite operates in-process, meaning the real Postgres SQL tests run inside any standard CI environment with zero database setup required.
 * Push delivery is an in-memory stub (no network, no APNs), so the full usage → engine → alarm path is exercised end-to-end without device infrastructure or secrets, keeping tests stable and hermetic.
+
+### 1.7 Platform Model & Backend/Device Boundary (confirmed constraint)
+The behavioural loop is split across two repos, and the split is dictated by iOS — this is a **confirmed platform constraint**, not a preference:
+
+* **Device (`personal-agent-phase0`, native) — the sensor and the enforcer.** All usage measurement flows *only* through Apple's Screen Time API: `FamilyActivityPicker` selects apps as **opaque tokens** (the app never learns which app it is), `DeviceActivityMonitor` delivers **schedule + usage-threshold** callbacks on-device (not a real-time foreground stream), and `ManagedSettings` **shields** the app. The immediate "stop it now" decision and the shield therefore live **on-device**; the barrage is realised as shield + repeated **local** notifications the user dismisses by acknowledging.
+* **Backend (this repo) — config, coach, memory, sync.** It is **not** the real-time intervention brain. Its jobs are: (1) author the rules/limits — increasingly through the **LLM agent** (the product's real moat); (2) generate safe coaching copy the device shows; (3) store the batched usage summaries the device reports, plus goals/streaks/memory (the "deepening model of you"); (4) sync config to the device and back it up.
+
+**Consequence for what's already built.** The `POST /usage` → engine → push path (COD-1/10/11/12) stays valuable as (a) the deterministic **engine spec** whose logic the device mirrors, (b) a hermetic **simulation/test harness**, and (c) the transport for *secondary* remote nudges — but it is **not** the iOS enforcement path. Device-facing endpoints (fetch-config-for-device, report-batched-usage) must be specced from the native client's exact contract, defined by the feasibility spike; the loop must not invent that contract.
 
 ---
 
