@@ -9,6 +9,7 @@ import {
 } from "./repos.js";
 import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js";
 import { PushDeliverer } from "./push-deliverer.js";
+import { ApnsDeliverer, apnsConfigFromEnv } from "./apns-deliverer.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
 import { createDb, type Db } from "./db/db.js";
@@ -82,13 +83,18 @@ async function main(): Promise<void> {
   const store = new MemoryStore();
   const ai = new AiOrchestrationService(stubExtractor);
 
-  // Intervention path (§23.5): deterministic engine + stub push delivery (§23.8).
-  // The clock is real here; tests inject a fixed one. Swap PushDeliverer for the
-  // real APNs adapter in production (COD-1 NG-2).
+  // Intervention path (§23.5): deterministic engine + push delivery (§23.8).
+  // The clock is real here; tests inject a fixed one. The deliverer is chosen by
+  // config (COD-10): real APNs when its env is present, else the in-memory stub
+  // (the dev/test default) — so nothing network-dependent runs without secrets.
   const clock: Clock = { nowIso: () => new Date().toISOString() };
   let idSeq = 0;
   const ids: IdGen = { next: (prefix) => `${prefix}_${++idSeq}` };
-  const intervention = new InterventionService(sessionRepo, clock, new PushDeliverer(), ids);
+  const apnsConfig = apnsConfigFromEnv(process.env);
+  const deliverer = apnsConfig ? new ApnsDeliverer(apnsConfig) : new PushDeliverer();
+  // eslint-disable-next-line no-console
+  console.log(`[pa-backend] push delivery: ${apnsConfig ? "APNs" : "in-memory stub"}`);
+  const intervention = new InterventionService(sessionRepo, clock, deliverer, ids);
 
   const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone, usage);
   const server = createApiServer(api);
