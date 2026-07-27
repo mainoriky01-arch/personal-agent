@@ -329,6 +329,13 @@ export class Api {
     const habit = await this.config.getHabit(habitId);
     if (!habit) return err(404, "habit_not_found");
 
+    // Validate the optional daily budget before any write, so a bad value never
+    // leaves an orphan commitment (AC-3). Body is untrusted JSON → treat as unknown.
+    const budget = proposal.dailyBudgetMinutes as unknown;
+    if (budget !== undefined && (typeof budget !== "number" || !Number.isInteger(budget) || budget <= 0)) {
+      return err(400, "dailyBudgetMinutes_invalid");
+    }
+
     const commitment: Commitment = {
       id: genId("commit"),
       naturalText: proposal.goal,
@@ -353,6 +360,8 @@ export class Api {
       exceptions: proposal.exceptions, // persisted as rule_exceptions (AC-4)
       maxInterventionsPerSession: proposal.maxInterventionsPerSession,
       maxInterventionsPerDay: proposal.maxInterventionsPerDay,
+      barrage: proposal.barrage === true, // COD-13: map the flag; absent/non-true → false
+      dailyBudgetMinutes: proposal.dailyBudgetMinutes, // COD-13; undefined → streak-only
       enabled: true,
     };
     await this.config.createRule(rule);

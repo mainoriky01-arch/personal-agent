@@ -89,4 +89,8 @@ export interface RuleProposal {
   maxInterventionsPerSession: number;
   maxInterventionsPerDay: number;
   exceptions: RuleException[];
+  /** Optional seatbelt barrage mode (COD-11); default false when omitted. */
+  barrage?: boolean;
+  /** Optional cumulative daily cap in minutes (COD-9); omitted → streak-only. */
+  dailyBudgetMinutes?: number;
 }
