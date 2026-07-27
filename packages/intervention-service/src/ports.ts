@@ -65,5 +65,8 @@ export interface TickSignal {
   detectedApp?: string;
   windowLabel?: string;
   minutesElapsed?: number;
+  /** Raw reported continuous foreground streak (seconds) — drives ack
+   * return-detection (COD-12). Optional so non-/usage callers are unaffected. */
+  foregroundSeconds?: number;
   channel: Channel;
 }

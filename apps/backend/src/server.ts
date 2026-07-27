@@ -62,6 +62,12 @@ export function createApiServer(api: Api): Server {
         return send(res, r.status, r);
       }
 
+      if (method === "POST" && path === "/usage/ack") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = await api.ackUsage(body);
+        return send(res, r.status, r);
+      }
+
       if (method === "POST" && path === "/usage") {
         const body = JSON.parse((await readBody(req)) || "{}");
         const r = await api.ingestUsage(body);
