@@ -143,6 +143,14 @@ export interface Rule {
    * on top of the continuous-streak threshold. Absent → streak-only behavior.
    */
   dailyBudgetMinutes?: number;
+  /**
+   * "Seatbelt" barrage mode. When true, while the same distraction persists
+   * in-window the engine re-delivers at the current level every `cooldownSeconds`
+   * instead of climbing the escalation ladder once and stopping — the caps
+   * (`maxInterventionsPerSession`/`Day`) still bound it. Default false → the
+   * current escalate-then-hold behavior.
+   */
+  barrage?: boolean;
   enabled: boolean;
 }
 

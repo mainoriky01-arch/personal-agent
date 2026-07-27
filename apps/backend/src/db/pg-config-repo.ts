@@ -52,6 +52,7 @@ interface RuleRow {
   max_interventions_session: number;
   max_interventions_day: number;
   daily_budget_minutes: number | null;
+  barrage: boolean;
   enabled: boolean;
 }
 
@@ -134,12 +135,12 @@ export class PgConfigRepo implements ConfigRepo {
         `INSERT INTO rules
            (id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
             cooldown_seconds, escalation, max_interventions_session, max_interventions_day,
-            daily_budget_minutes, enabled)
-         VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11,$12)`,
+            daily_budget_minutes, barrage, enabled)
+         VALUES ($1,$2,$3,$4,$5::text[],$6,$7,$8::int[],$9,$10,$11,$12,$13)`,
         [
           r.id, r.habitId, r.commitmentId, r.intensity, r.interferingApps, r.thresholdMinutes,
           r.cooldownSeconds, r.escalation, r.maxInterventionsPerSession, r.maxInterventionsPerDay,
-          r.dailyBudgetMinutes ?? null, r.enabled,
+          r.dailyBudgetMinutes ?? null, r.barrage ?? false, r.enabled,
         ],
       );
       for (const e of r.exceptions) {
@@ -156,7 +157,7 @@ export class PgConfigRepo implements ConfigRepo {
     const { rows } = await this.db.query<RuleRow>(
       `SELECT id, habit_id, commitment_id, intensity, interfering_apps, threshold_minutes,
               cooldown_seconds, escalation, max_interventions_session, max_interventions_day,
-              daily_budget_minutes, enabled
+              daily_budget_minutes, barrage, enabled
        FROM rules WHERE id = $1`,
       [id],
     );
@@ -184,6 +185,7 @@ export class PgConfigRepo implements ConfigRepo {
       maxInterventionsPerSession: r.max_interventions_session,
       maxInterventionsPerDay: r.max_interventions_day,
       dailyBudgetMinutes: r.daily_budget_minutes ?? undefined,
+      barrage: r.barrage,
       enabled: r.enabled,
     };
   }
