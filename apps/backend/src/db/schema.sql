@@ -84,12 +84,14 @@ CREATE TABLE IF NOT EXISTS rules (
   max_interventions_session INT NOT NULL DEFAULT 3,
   max_interventions_day     INT NOT NULL DEFAULT 8,
   daily_budget_minutes      INT,             -- optional cumulative daily cap (COD-9)
+  barrage                   BOOLEAN NOT NULL DEFAULT false, -- seatbelt barrage mode (COD-11)
   enabled                   BOOLEAN NOT NULL DEFAULT true,
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- Idempotent add for durable DBs created before COD-9 (CREATE TABLE above is a
--- no-op once the table exists, so the new column needs its own guarded ALTER).
+-- Idempotent adds for durable DBs created before these columns landed (CREATE
+-- TABLE above is a no-op once the table exists, so new columns need guarded ALTERs).
 ALTER TABLE rules ADD COLUMN IF NOT EXISTS daily_budget_minutes INT;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS barrage BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_rules_habit ON rules(habit_id);
 
 CREATE TABLE IF NOT EXISTS rule_exceptions (

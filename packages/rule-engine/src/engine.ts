@@ -163,6 +163,15 @@ export function decide(
       // Quiet hours: hold escalation messaging.
       if (ctx.quietHours) return NOOP(session.state, "quiet_hours");
 
+      // Barrage mode (§ "cintura di sicurezza", COD-11): while the same
+      // distraction persists in-window, keep hammering at the CURRENT level every
+      // cooldown instead of climbing the ladder once. Re-delivery does not require
+      // an escalation rung; the session/day caps checked above remain the hard
+      // ceiling, so this can never exceed maxInterventionsPerSession/Day.
+      if (rule.barrage) {
+        return { kind: "intervene", nextState: session.state, level: session.level, action: actionForLevel(session.level), reason: "barrage_repeat" };
+      }
+
       const up = nextLevel(rule, session.level);
       return { kind: "escalate", nextState: "escalated", level: up, action: actionForLevel(up), reason: "escalation_after_ignore" };
     }
