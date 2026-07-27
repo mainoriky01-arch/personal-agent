@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(git *)",
+      "Bash(pnpm:*)",
+      "Bash(pnpm *)",
+      "mcp__github",
+      "mcp__github__*",
+      "mcp__Linear",
+      "mcp__Linear__*"
+    ]
+  }
+}
