@@ -87,26 +87,36 @@ See CLAUDE.md §3.4 for a fully-worked example at the right level of detail.
 - [ ] (slug: llm-copywriter-adapter) Adattatore CopyWriter LLM reale per i messaggi, col Safety Layer sempre applicato
       Goal: Comporre il testo degli interventi con un LLM Anthropic dietro env, mantenendo il Safety Layer come gate invalicabile; template di default.
       Problem: I messaggi vengono da template. Per un coach empatico serve testo generato da LLM, ma deve SEMPRE passare il Safety Layer e mai entrare nel hot-path decisionale.
+      Nota decisione (2026-07-28, Riccardo — Opzione A): la porta `aiDraft` di
+        `InterventionService` è oggi **sincrona** (`(ctx) => string | undefined`),
+        incompatibile con una chiamata LLM asincrona. Si adotta la porta **async**:
+        `aiDraft?: (ctx) => Promise<string | undefined>`, `await`-ata in `handleTick`.
+        Giustificazione §1.7: il backend NON è il cervello real-time (enforcement
+        on-device via shield), quindi il path push è *secondario* e una chiamata
+        async lì è accettabile. Lo scope include perciò `@pa/intervention-service`.
+        Il hot-path deterministico resta `decide()`, che non chiama mai l'LLM.
       Input/Output:
-        - Input: Nessun cambio HTTP; l'`aiDraft` iniettato in `InterventionService`.
+        - Input: Nessun cambio HTTP; l'`aiDraft` (ora async) iniettato in `InterventionService`.
         - Success Output: Env presente → l'adattatore genera la bozza; il Safety Layer la valida; bozza sicura → consegnata, altrimenti fallback al template.
-        - Failure Output: Errore LLM → fallback al template (comportamento già presente in `composeMessage`).
+        - Failure Output: Errore LLM → `aiDraft` risolve `undefined` → fallback al template (comportamento già presente in `composeMessage`).
       AC:
-        - [ ] AC-1: Nuovo `LlmCopyWriter` fornisce `aiDraft(ctx)` via SDK Anthropic; API key da env.
-        - [ ] AC-2: Ogni output LLM passa per il Safety Layer esistente prima della consegna; output non-safe → fallback al template.
-        - [ ] AC-3: Selezione per-config in `main.ts`; default template in dev/test.
-        - [ ] AC-4: Test ermetici: client iniettato; output non-safe → fallback; nessuna rete.
+        - [ ] AC-1: La porta `aiDraft` di `InterventionService` diventa `(ctx) => Promise<string | undefined>` ed è `await`-ata in `handleTick`; il comportamento è invariato quando `aiDraft` è assente.
+        - [ ] AC-2: Nuovo `LlmCopyWriter` in `apps/backend` fornisce `aiDraft(ctx): Promise<string | undefined>` via transport Anthropic iniettabile (riuso `LlmComplete`/pattern di COD-14, `fetch`, nessun SDK); API key da env.
+        - [ ] AC-3: Ogni output LLM passa per il Safety Layer esistente (`composeMessage`) prima della consegna; output non-safe → `source:"template"`/fallback (mai consegnato non-safe).
+        - [ ] AC-4: Selezione per-config in `main.ts`: `ANTHROPIC_API_KEY` presente → `LlmCopyWriter` iniettato; assente → nessun `aiDraft` (template, default dev/test). Il log indica quale è attivo.
+        - [ ] AC-5: Test ermetici: transport iniettato (fake, nessuna rete); output non-safe → fallback verificato; errore transport → `undefined` → fallback; il tick resta verde.
       Out of Scope (Non-goals):
-        - NG-1: Nessun bypass del Safety Layer.
-        - NG-2: Nessun LLM nella decisione di intervento (solo copy).
-        - NG-3: Nessun segreto committato.
-      Constraints: Come `llm-intent-adapter` (SDK Anthropic, env, client iniettabile); riusare il Safety Layer di `@pa/intervention-writer` senza modificarlo.
-      Files: apps/backend/src/llm-copywriter.ts (nuovo), apps/backend/src/main.ts, .env.example, apps/backend/test/*
-      Tests: "llm-copy": safe→consegnato, unsafe→fallback template, selezione da env, nessuna rete.
+        - NG-1: Nessun bypass né modifica del Safety Layer di `@pa/intervention-writer`.
+        - NG-2: Nessun LLM in `decide()` (hot-path decisionale deterministico); l'LLM tocca solo la *composizione del testo*.
+        - NG-3: Nessun segreto committato — solo lettura da env.
+        - NG-4: Nessun cambio ai contratti HTTP né alla forma di `MessageContext`.
+      Constraints: Riusare il transport `fetch` iniettabile di COD-14 (`LlmComplete`, nessun SDK, §1.4); riusare il Safety Layer di `@pa/intervention-writer` senza modificarlo. Cambiare la firma di `aiDraft` in `@pa/intervention-service` da sync ad async è **in scope** (unico cambio permesso a quel pacchetto). `MessageContext` invariato.
+      Files: apps/backend/src/llm-copywriter.ts (nuovo), apps/backend/src/main.ts, .env.example, packages/intervention-service/src/service.ts (firma aiDraft → async), apps/backend/test/*, packages/intervention-service/test/*
+      Tests: "llm-copy": safe→consegnato (source ai), unsafe→fallback template, errore→fallback, selezione da env, nessuna rete; test esistenti di InterventionService aggiornati alla porta async e verdi.
       Verify:
-        1. con env → bozze LLM (mock) validate dal Safety Layer
+        1. con `ANTHROPIC_API_KEY` (fittizia) → log copywriter LLM; bozze (mock) validate dal Safety Layer
         2. senza env → template invariati.
-      Risk: Medio.
+      Risk: Medio — cambia la firma di `aiDraft` in `@pa/intervention-service` (sync→async); isolato, tutti i call-site aggiornati e testati.
       After: llm-intent-adapter
 
 ---
