@@ -201,7 +201,7 @@ describe("InterventionService — end-to-end cycle (spec §43)", () => {
       clock,
       deliverer,
       new SeqIds(),
-      () => "Hai aperto Instagram nel tuo tempo per leggere. Chiudi e inizia.",
+      async () => "Hai aperto Instagram nel tuo tempo per leggere. Chiudi e inizia.",
     );
     clock.t = "2026-07-14T21:00:00Z";
     await svcAi.handleTick(baseSig());
@@ -216,7 +216,7 @@ describe("InterventionService — end-to-end cycle (spec §43)", () => {
       clock,
       deliverer,
       new SeqIds(),
-      () => "Sei un fallito e fallirai anche stasera.",
+      async () => "Sei un fallito e fallirai anche stasera.",
     );
     clock.t = "2026-07-14T21:00:00Z";
     await svcAi.handleTick(baseSig());
