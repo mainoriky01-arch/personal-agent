@@ -11,6 +11,7 @@ import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js
 import { PushDeliverer } from "./push-deliverer.js";
 import { ApnsDeliverer, apnsConfigFromEnv } from "./apns-deliverer.js";
 import { LlmIntentExtractor, llmConfigFromEnv, fetchComplete } from "./llm-intent-extractor.js";
+import { LlmCopyWriter } from "./llm-copywriter.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
 import { createDb, type Db } from "./db/db.js";
@@ -103,7 +104,16 @@ async function main(): Promise<void> {
   const deliverer = apnsConfig ? new ApnsDeliverer(apnsConfig) : new PushDeliverer();
   // eslint-disable-next-line no-console
   console.log(`[pa-backend] push delivery: ${apnsConfig ? "APNs" : "in-memory stub"}`);
-  const intervention = new InterventionService(sessionRepo, clock, deliverer, ids);
+
+  // Intervention copy (§23.6, COD-15): when ANTHROPIC_API_KEY is set, an LLM
+  // copywriter drafts the message; it is UNTRUSTED and still passes the Safety
+  // Layer inside composeMessage. Absent → no aiDraft, deterministic templates
+  // (the dev/test default). Reuses the same env config as the intent extractor.
+  const copywriter = llmConfig ? new LlmCopyWriter(fetchComplete(llmConfig)) : undefined;
+  const aiDraft = copywriter ? copywriter.write.bind(copywriter) : undefined;
+  // eslint-disable-next-line no-console
+  console.log(`[pa-backend] intervention copy: ${copywriter ? `LLM (${llmConfig!.model})` : "template"}`);
+  const intervention = new InterventionService(sessionRepo, clock, deliverer, ids, aiDraft);
 
   const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone, usage);
   const server = createApiServer(api);

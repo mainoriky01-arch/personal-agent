@@ -39,8 +39,14 @@ export class InterventionService {
     private readonly clock: Clock,
     private readonly deliverer: Deliverer,
     private readonly ids: IdGen,
-    /** Optional AI copy provider — untrusted, still passes the safety gate. */
-    private readonly aiDraft?: (ctx: MessageContext) => string | undefined,
+    /**
+     * Optional AI copy provider — untrusted, still passes the safety gate.
+     * Async (COD-15): a real LLM copywriter is awaited here. Per CLAUDE.md §1.7
+     * the backend is not the real-time brain (enforcement is on-device), so this
+     * secondary push path may await a network call. The deterministic hot path is
+     * `decide()`, which never calls an LLM.
+     */
+    private readonly aiDraft?: (ctx: MessageContext) => Promise<string | undefined>,
   ) {}
 
   async handleTick(sig: TickSignal): Promise<TickResult> {
@@ -107,7 +113,7 @@ export class InterventionService {
         channel: sig.channel,
         coach: sig.coach,
       };
-      const composed = composeMessage(msgCtx, this.aiDraft?.(msgCtx));
+      const composed = composeMessage(msgCtx, await this.aiDraft?.(msgCtx));
       messageSource = composed.source;
 
       const { deliveryId } = await this.deliverer.deliver({
