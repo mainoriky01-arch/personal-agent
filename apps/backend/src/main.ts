@@ -10,6 +10,7 @@ import {
 import { AiOrchestrationService, type IntentExtractor } from "./orchestration.js";
 import { PushDeliverer } from "./push-deliverer.js";
 import { ApnsDeliverer, apnsConfigFromEnv } from "./apns-deliverer.js";
+import { LlmIntentExtractor, llmConfigFromEnv, fetchComplete } from "./llm-intent-extractor.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
 import { createDb, type Db } from "./db/db.js";
@@ -81,7 +82,15 @@ async function main(): Promise<void> {
   }
 
   const store = new MemoryStore();
-  const ai = new AiOrchestrationService(stubExtractor);
+  // Intent extraction (§23.6, COD-14): real LLM adapter when ANTHROPIC_API_KEY is
+  // set, else the keyword stub (the dev/test default) — no key, no network.
+  const llmConfig = llmConfigFromEnv(process.env);
+  const extractor: IntentExtractor = llmConfig
+    ? new LlmIntentExtractor(fetchComplete(llmConfig))
+    : stubExtractor;
+  // eslint-disable-next-line no-console
+  console.log(`[pa-backend] intent extractor: ${llmConfig ? `LLM (${llmConfig.model})` : "keyword stub"}`);
+  const ai = new AiOrchestrationService(extractor);
 
   // Intervention path (§23.5): deterministic engine + push delivery (§23.8).
   // The clock is real here; tests inject a fixed one. The deliverer is chosen by
