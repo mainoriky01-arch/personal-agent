@@ -9,7 +9,8 @@
       "mcp__github",
       "mcp__github__*",
       "mcp__Linear",
-      "mcp__Linear__*"
+      "mcp__Linear__*",
+      "mcp__Claude_Code_Remote__list_repos"
     ]
   }
 }
