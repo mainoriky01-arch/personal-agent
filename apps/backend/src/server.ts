@@ -2,11 +2,14 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import type { Api } from "./api.js";
 
-/** Transport options (COD-16). */
+/** Transport options (COD-16, COD-18). */
 export interface ServerOptions {
   /** Shared bearer token. When set, every route except `GET /health` requires
    * `Authorization: Bearer <token>`; absent/empty → open (dev/test default). */
   authToken?: string;
+  /** When true, emit one structured log line per request (method/path/status/
+   * durationMs) to stdout. Absent/false → silent (the dev/test default). */
+  log?: boolean;
 }
 
 /**
@@ -58,11 +61,25 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 export function createApiServer(api: Api, options: ServerOptions = {}): Server {
   const authToken = options.authToken?.trim() || undefined;
+  const log = options.log === true;
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const path = url.pathname;
       const method = req.method ?? "GET";
+
+      // Per-request structured log (COD-18): one line on response completion with
+      // method/path/status/durationMs only — never body or headers (NG-2). Opt-in
+      // via options.log, so the dev/test default stays silent.
+      if (log) {
+        const start = Date.now();
+        res.on("finish", () => {
+          // eslint-disable-next-line no-console
+          console.log(
+            JSON.stringify({ method, path, status: res.statusCode, durationMs: Date.now() - start }),
+          );
+        });
+      }
 
       const isHealth = method === "GET" && path === "/health";
 
@@ -75,7 +92,10 @@ export function createApiServer(api: Api, options: ServerOptions = {}): Server {
       }
 
       if (isHealth) {
-        return send(res, 200, { status: "ok" });
+        // Readiness (COD-18): report storage mode and, in durable mode, that the
+        // DB answers a trivial query. Stays auth-exempt (COD-16).
+        const h = await api.health();
+        return send(res, h.httpStatus, h.body);
       }
 
       if (method === "POST" && path === "/chat/draft") {

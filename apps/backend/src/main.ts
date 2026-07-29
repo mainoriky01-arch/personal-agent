@@ -127,7 +127,11 @@ async function main(): Promise<void> {
   const authToken = process.env.PA_AUTH_TOKEN?.trim() || undefined;
   // eslint-disable-next-line no-console
   console.log(`[pa-backend] auth: ${authToken ? "bearer token (PA_AUTH_TOKEN set)" : "open (PA_AUTH_TOKEN unset)"}`);
-  const server = createApiServer(api, { authToken });
+  // Per-request logging (COD-18): on by default, disabled with PA_LOG=off.
+  const log = process.env.PA_LOG !== "off";
+  // eslint-disable-next-line no-console
+  console.log(`[pa-backend] request log: ${log ? "on" : "off (PA_LOG=off)"}`);
+  const server = createApiServer(api, { authToken, log });
 
   // Graceful shutdown (COD-17): on SIGTERM/SIGINT stop the server (and, in
   // durable mode, close the Db), then exit 0. `once` + the idempotent shutdown
