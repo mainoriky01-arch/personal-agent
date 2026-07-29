@@ -13,6 +13,8 @@ import type { Api } from "./api.js";
  *   POST /habits              { title, type, ... }
  *   POST /rules/confirm       { habitId, proposal }
  *   POST /usage               { ruleId, appId, foregroundSeconds, atIso? }
+ *   POST /seatbelt/trigger    { userId, targetApp }
+ *   POST /seatbelt/resolved   { userId }
  *   GET  /memory
  *   POST /memory              { content, category, ... }
  *   DELETE /memory/:id
@@ -71,6 +73,18 @@ export function createApiServer(api: Api): Server {
       if (method === "POST" && path === "/usage") {
         const body = JSON.parse((await readBody(req)) || "{}");
         const r = await api.ingestUsage(body);
+        return send(res, r.status, r);
+      }
+
+      if (method === "POST" && path === "/seatbelt/trigger") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = api.triggerSeatbelt(body);
+        return send(res, r.status, r);
+      }
+
+      if (method === "POST" && path === "/seatbelt/resolved") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = api.resolveSeatbelt(body);
         return send(res, r.status, r);
       }
 
