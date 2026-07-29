@@ -1,5 +1,28 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import type { Api } from "./api.js";
+
+/** Transport options (COD-16). */
+export interface ServerOptions {
+  /** Shared bearer token. When set, every route except `GET /health` requires
+   * `Authorization: Bearer <token>`; absent/empty → open (dev/test default). */
+  authToken?: string;
+}
+
+/**
+ * Constant-time bearer check (COD-16). Returns true only when `header` is exactly
+ * `Bearer <expected>`. A missing header, wrong scheme, or length mismatch is
+ * rejected without throwing (`timingSafeEqual` requires equal-length buffers, so
+ * the length guard runs first).
+ */
+function bearerMatches(expected: string, header: string | undefined): boolean {
+  const prefix = "Bearer ";
+  if (!header || !header.startsWith(prefix)) return false;
+  const provided = Buffer.from(header.slice(prefix.length));
+  const wanted = Buffer.from(expected);
+  if (provided.length !== wanted.length) return false;
+  return timingSafeEqual(provided, wanted);
+}
 
 /**
  * HTTP server (spec §25 API, §22.2 backend). Node stdlib only — no framework —
@@ -33,14 +56,25 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(json);
 }
 
-export function createApiServer(api: Api): Server {
+export function createApiServer(api: Api, options: ServerOptions = {}): Server {
+  const authToken = options.authToken?.trim() || undefined;
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const path = url.pathname;
       const method = req.method ?? "GET";
 
-      if (method === "GET" && path === "/health") {
+      const isHealth = method === "GET" && path === "/health";
+
+      // Auth gate (COD-16): when a token is configured, every route except the
+      // health check requires a matching bearer token. Unset token → open, so
+      // the dev/test default and the current client are unaffected. The check
+      // sits in the transport; the `Api` handlers stay pure (§25).
+      if (authToken && !isHealth && !bearerMatches(authToken, req.headers.authorization)) {
+        return send(res, 401, { ok: false, error: "unauthorized" });
+      }
+
+      if (isHealth) {
         return send(res, 200, { status: "ok" });
       }
 
