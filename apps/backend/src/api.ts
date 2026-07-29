@@ -179,6 +179,23 @@ export class Api {
     this.usage = usage ?? new MemoryUsageRepo(store);
   }
 
+  // §22.2 — GET /health readiness (COD-18). In-memory mode reports the storage
+  // only; durable mode also probes the Db with a trivial `SELECT 1` so a load
+  // balancer sees a degraded backend (503) when the DB is unreachable. Returns
+  // the raw body + HTTP status; the transport sends it verbatim.
+  async health(): Promise<{
+    httpStatus: number;
+    body: { status: string; storage: "memory" | "durable"; db?: "ok" | "error" };
+  }> {
+    if (!this.db) return { httpStatus: 200, body: { status: "ok", storage: "memory" } };
+    try {
+      await this.db.query("SELECT 1");
+      return { httpStatus: 200, body: { status: "ok", storage: "durable", db: "ok" } };
+    } catch {
+      return { httpStatus: 503, body: { status: "degraded", storage: "durable", db: "error" } };
+    }
+  }
+
   // §25 — POST /chat/draft : chat text → confirmable rule draft (never activates)
   async draftRule(text: string) {
     if (!text?.trim()) return err(400, "empty_text");
