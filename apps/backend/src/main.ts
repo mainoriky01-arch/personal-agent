@@ -14,6 +14,7 @@ import { LlmIntentExtractor, llmConfigFromEnv, fetchComplete } from "./llm-inten
 import { LlmCopyWriter } from "./llm-copywriter.js";
 import { Api } from "./api.js";
 import { createApiServer } from "./server.js";
+import { createShutdown } from "./runtime.js";
 import { createDb, type Db } from "./db/db.js";
 import { ensureDefaultUser } from "./db/default-user.js";
 import { PgConfigRepo } from "./db/pg-config-repo.js";
@@ -61,12 +62,15 @@ async function main(): Promise<void> {
   let coach: CoachRepo | undefined;
   let usage: UsageRepo | undefined;
   let dbRef: Db | undefined;
+  // Closes the durable Db on shutdown; undefined in in-memory mode (COD-17).
+  let closeDb: (() => Promise<void>) | undefined;
   let timezone: string | undefined;
   let sessionRepo: SessionRepo = new InMemorySessionRepo();
   if (dbPath) {
     const db = await createDb(dbPath);
     const userId = await ensureDefaultUser(db);
     dbRef = db;
+    closeDb = () => db.close();
     config = new PgConfigRepo(db);
     memory = new PgMemoryRepo(db);
     coach = new PgCoachRepo(db);
@@ -124,6 +128,25 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[pa-backend] auth: ${authToken ? "bearer token (PA_AUTH_TOKEN set)" : "open (PA_AUTH_TOKEN unset)"}`);
   const server = createApiServer(api, { authToken });
+
+  // Graceful shutdown (COD-17): on SIGTERM/SIGINT stop the server (and, in
+  // durable mode, close the Db), then exit 0. `once` + the idempotent shutdown
+  // keep a repeated or racing signal from double-closing.
+  const shutdown = createShutdown(server, closeDb);
+  const onSignal = (sig: NodeJS.Signals): void => {
+    // eslint-disable-next-line no-console
+    console.log(`[pa-backend] ${sig} received — shutting down`);
+    shutdown().then(
+      () => process.exit(0),
+      (e) => {
+        // eslint-disable-next-line no-console
+        console.error("[pa-backend] shutdown error:", e);
+        process.exit(1);
+      },
+    );
+  };
+  process.once("SIGTERM", () => onSignal("SIGTERM"));
+  process.once("SIGINT", () => onSignal("SIGINT"));
 
   server.listen(port, () => {
     // eslint-disable-next-line no-console
