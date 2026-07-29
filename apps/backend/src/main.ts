@@ -116,7 +116,14 @@ async function main(): Promise<void> {
   const intervention = new InterventionService(sessionRepo, clock, deliverer, ids, aiDraft);
 
   const api = new Api(store, ai, intervention, clock, config, memory, coach, dbRef, timezone, usage);
-  const server = createApiServer(api);
+
+  // Auth (COD-16): when PA_AUTH_TOKEN is set, every route except GET /health
+  // requires `Authorization: Bearer <token>`; unset → open (the dev/test
+  // default, and what the current client expects).
+  const authToken = process.env.PA_AUTH_TOKEN?.trim() || undefined;
+  // eslint-disable-next-line no-console
+  console.log(`[pa-backend] auth: ${authToken ? "bearer token (PA_AUTH_TOKEN set)" : "open (PA_AUTH_TOKEN unset)"}`);
+  const server = createApiServer(api, { authToken });
 
   server.listen(port, () => {
     // eslint-disable-next-line no-console
