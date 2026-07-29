@@ -119,6 +119,84 @@ See CLAUDE.md §3.4 for a fully-worked example at the right level of detail.
       Risk: Medio — cambia la firma di `aiDraft` in `@pa/intervention-service` (sync→async); isolato, tutti i call-site aggiornati e testati.
       After: llm-intent-adapter
 
+- [ ] (slug: api-auth) Autenticazione a bearer token condiviso dietro env (aperto di default)
+      Goal: Proteggere tutte le rotte (tranne `/health`) con un bearer token letto da env; assente → aperto, comportamento dev/test invariato.
+      Problem: Il backend non ha alcuna autenticazione — `grep` su server/api non trova nulla. Chiunque conosca l'URL può leggere/scrivere regole, memory, coach e far scattare/risolvere lo shield. È il prerequisito 🔴 per esporre il backend fuori da localhost.
+      Input/Output:
+        - Input: header `Authorization: Bearer <token>` su tutte le rotte tranne `GET /health`; token atteso dall'env `PA_AUTH_TOKEN`.
+        - Success Output: token valido → richiesta procede invariata; `PA_AUTH_TOKEN` non settata → nessun controllo (default dev/test).
+        - Failure Output: 401 "unauthorized" quando `PA_AUTH_TOKEN` è settata e l'header manca o non combacia.
+      AC:
+        - [ ] AC-1: Con `PA_AUTH_TOKEN` settata, ogni rotta tranne `/health` senza header valido → 401 "unauthorized".
+        - [ ] AC-2: Con header `Authorization: Bearer <PA_AUTH_TOKEN>` corretto → la richiesta procede normalmente (stesse risposte di oggi).
+        - [ ] AC-3: Con `PA_AUTH_TOKEN` non settata → nessun 401; tutti i test esistenti restano verdi senza modifiche.
+        - [ ] AC-4: `GET /health` non richiede token (per gli health check dell'host).
+      Out of Scope (Non-goals):
+        - NG-1: Nessun multi-utente, login per-utente o Sign in with Apple.
+        - NG-2: Nessun cambio alle forme di request/response delle rotte.
+        - NG-3: Nessun rate-limiting.
+      Constraints: Il controllo vive nel transport (`server.ts`), non nell'`Api`; token da env `PA_AUTH_TOKEN` passato via `main.ts`; confronto constant-time (`crypto.timingSafeEqual`); nessuna dipendenza nuova.
+      Files: apps/backend/src/server.ts, apps/backend/src/main.ts, .env.example, apps/backend/test/*
+      Tests: "auth": env settata → 401 senza header e 200 con header valido; `/health` esente; env non settata → aperto, suite invariata.
+      Verify:
+        1. PA_AUTH_TOKEN=segreto pnpm --filter @pa/backend dev
+        2. curl -s -o /dev/null -w "%{http_code}" http://localhost:8788/coach → 401
+        3. curl -H "Authorization: Bearer segreto" http://localhost:8788/coach → 200
+        4. curl http://localhost:8788/health → 200 (senza header)
+      Risk: Basso, isolato nel transport.
+      After: (nessuno)
+
+- [ ] (slug: prod-runtime) Avvio di produzione + spegnimento pulito del backend
+      Goal: Un comando `start` che boota il server leggendo PORT/PA_DB_PATH e uno spegnimento pulito su SIGTERM/SIGINT, così il backend può girare su un host reale invece che solo in `dev`.
+      Problem: Esiste solo lo script `dev` (tsx). Per ospitare il backend su un host serve un avvio stabile e uno shutdown che chiuda il server (e il Db in durable mode) senza troncare richieste in volo. Gap 🔴 verso l'hosting.
+      Input/Output:
+        - Input: `pnpm --filter @pa/backend start` con env PORT/PA_DB_PATH.
+        - Success Output: il server ascolta su PORT, `GET /health` → 200; su SIGTERM chiude server (e Db in durable mode) ed esce con codice 0.
+        - Failure Output: errore di boot (es. porta occupata) → log chiaro ed exit code ≠ 0.
+      AC:
+        - [ ] AC-1: `apps/backend/package.json` ha uno script `start` che avvia `src/main.ts` leggendo PORT e PA_DB_PATH.
+        - [ ] AC-2: `main.ts` intercetta SIGTERM e SIGINT: chiude il server HTTP e, in durable mode, il `Db`, poi exit 0.
+        - [ ] AC-3: Test di boot: il server parte su porta effimera, `GET /health` → 200, poi lo shutdown chiude senza errori.
+        - [ ] AC-4: Nessun cambio ai contratti HTTP; le rotte si comportano come prima.
+      Out of Scope (Non-goals):
+        - NG-1: Nessuna scelta di provider di hosting né file di deploy (Dockerfile/fly.toml) — resta di tua competenza (host non ancora scelto).
+        - NG-2: Nessun clustering / multi-processo / PM2.
+        - NG-3: Nessun cambio alla logica delle rotte o allo storage.
+      Constraints: Solo stdlib Node (§1.4); riusare `createDb`/`createApiServer` esistenti; lo shutdown deve essere idempotente.
+      Files: apps/backend/package.json, apps/backend/src/main.ts, apps/backend/test/*
+      Tests: "prod-runtime": boot su porta effimera → /health 200; segnale di shutdown → server chiuso, nessuna eccezione.
+      Verify:
+        1. pnpm --filter @pa/backend start & sleep 1
+        2. curl http://localhost:8788/health → 200
+        3. kill -TERM %1 → il processo esce pulito (codice 0)
+      Risk: Basso, isolato nell'entrypoint.
+      After: (nessuno)
+
+- [ ] (slug: ops-health-logging) Readiness `/health` + logging strutturato per richiesta
+      Goal: Trasformare `/health` in una vera readiness (riporta modalità storage e, in durable mode, che il DB risponde) e loggare una riga strutturata per ogni richiesta.
+      Problem: `/health` risponde sempre `{status:"ok"}` anche se il DB è morto, e non c'è alcun log per richiesta: in produzione saresti cieco su errori e latenza. Gap 🟡 di osservabilità.
+      Input/Output:
+        - Input: `GET /health`; ogni richiesta HTTP.
+        - Success Output: 200 `{ status:"ok", storage:"memory" }` in memory mode; in durable mode esegue `SELECT 1` e risponde `{ status:"ok", storage:"durable", db:"ok" }`.
+        - Failure Output: in durable mode, se `SELECT 1` fallisce → 503 `{ status:"degraded", storage:"durable", db:"error" }`.
+      AC:
+        - [ ] AC-1: In memory mode `GET /health` → 200 `{status:"ok", storage:"memory"}`.
+        - [ ] AC-2: In durable mode `/health` esegue `SELECT 1`; ok → 200 con `db:"ok"`; query in errore → 503 con `db:"error"`.
+        - [ ] AC-3: Ogni richiesta emette una riga di log strutturata su stdout con method, path, status e durationMs; disattivabile via env `PA_LOG=off` (default off nei test per non sporcare l'output).
+        - [ ] AC-4: Nessun cambio alle forme di response delle altre rotte.
+      Out of Scope (Non-goals):
+        - NG-1: Nessun sistema esterno di metriche/tracing (Prometheus/OpenTelemetry).
+        - NG-2: Nessun logging di body/payload — solo metadati (method/path/status/durata).
+        - NG-3: Nessun cambio ai contratti delle altre rotte.
+      Constraints: La readiness usa il `Db` iniettato in `Api`; il logging vive nel transport (`server.ts`); solo stdlib, nessuna dipendenza nuova.
+      Files: apps/backend/src/server.ts, apps/backend/src/api.ts, apps/backend/src/main.ts, .env.example, apps/backend/test/*
+      Tests: "health-readiness": memory→ok/storage:memory; durable con Db reale (PGlite)→db:ok; Db che lancia→503 db:error. "req-log": una richiesta con PA_LOG on produce una riga con i campi attesi; con PA_LOG=off nessuna riga.
+      Verify:
+        1. pnpm --filter @pa/backend dev → curl /health → {status:ok, storage:memory}
+        2. PA_DB_PATH=./data pnpm --filter @pa/backend dev → curl /health → {status:ok, storage:durable, db:ok}
+      Risk: Basso, isolato in health + transport.
+      After: (nessuno)
+
 ---
 
 > **Nota architetturale (confine ridefinito — vincolo iOS confermato).** Su iOS
@@ -133,6 +211,24 @@ See CLAUDE.md §3.4 for a fully-worked example at the right level of detail.
 
 Questi NON sono in formato item (niente `slug`), quindi l'orchestrator li ignora
 di proposito.
+
+- **iOS — signing & run su device (`personal-agent-phase0`).** Sbloccato dall'Apple
+  Developer Program a pagamento. Da fare in Xcode: generare il progetto da
+  `project.yml` (XcodeGen), selezionare il team, far registrare i 4 App ID con
+  Family Controls (Development) + App Group `group.com.utentra.personalagent.phase0`,
+  installare su iPhone fisico (Screen Time non gira nel Simulator).
+- **iOS — richiesta entitlement Family Controls *distribution* ad Apple** (collo di
+  bottiglia sui tempi): https://developer.apple.com/contact/request/family-controls-distribution
+  — chiederla il giorno 1 se punti a TestFlight/App Store.
+- **iOS — puntare il client a un backend vivo:** l'URL `trycloudflare` in
+  `Shared/Constants.swift` è effimero/morto; sostituirlo con l'URL stabile
+  dell'host (o un tunnel/IP LAN per il test locale) e ricompilare.
+- **iOS — mandare il bearer token** (header `Authorization`) dal `NetworkManager`
+  e dal `MonitorExtension` una volta attivo l'item `api-auth` lato backend.
+- **Hosting & deploy del backend:** scegliere il provider (Fly.io / Railway / Render
+  / VPS) e scrivere la config di deploy (Dockerfile/`fly.toml`) + volume persistente
+  per `PA_DB_PATH` + backup del file PGlite. Il codice è reso ospitabile dagli item
+  `prod-runtime` e `ops-health-logging`; la scelta dell'host e i secret restano tuoi.
 
 - **Spike Screen Time API (PRIORITÀ #1) — ora è "definire il contratto", non "se è
   fattibile".** Il vincolo è confermato: solo FamilyControls / DeviceActivity /
@@ -158,5 +254,13 @@ fissa le forme esatte:
   (nudge remoti/coaching); serve solo se useremo push remote oltre allo shield
   on-device. (Spec bozza già pronta se serve: `POST /devices { token, platform }`,
   upsert in tabella `devices`.)
-- **auth / multi-utente** (Sign in with Apple) — più avanti (tua indicazione).
+- **multi-utente** (Sign in with Apple, dati scoped per utente) — più avanti.
+  L'auth base a bearer token è invece già un item attivo (`api-auth`) qui sopra.
+
+> **Aggiornamento contratto device (2026-07-29).** Il contratto device↔backend
+> non è più da indovinare: letto dal client reale, il device chiama solo
+> `/chat/draft`, `/rules/confirm`, `/seatbelt/trigger`, `/seatbelt/resolved`
+> (il rilevamento e lo shield sono on-device). `config-sync` e `usage-report`
+> restano opzionali/futuri perché **il client attuale non li invoca**; diventano
+> item solo se/quando il client inizierà a scaricarli.
 
