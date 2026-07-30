@@ -54,6 +54,23 @@ export interface UsageResult {
   intervention?: Intervention;
 }
 
+/**
+ * Live seatbelt/barrage state for a device, keyed by userId (§1.7 device loop).
+ * The native client applies the shield on-device and reports the barrage as
+ * active via `POST /seatbelt/trigger`, then clears it via `POST /seatbelt/resolved`.
+ * The backend only mirrors this state (the device is the enforcer), so it is
+ * transient in-process state, not a durable record.
+ */
+export interface SeatbeltStatus {
+  userId: string;
+  /** True while a barrage is active for this user. */
+  active: boolean;
+  /** The app that triggered the barrage; present only while active. */
+  targetApp?: string;
+  /** ISO instant the barrage became active; present only while active. */
+  since?: string;
+}
+
 const ok = <T>(data: T, status = 200): ApiResult<T> => ({ ok: true, status, data });
 const err = (status: number, error: string): ApiResult<never> => ({ ok: false, status, error });
 
@@ -153,6 +170,10 @@ export class Api {
   private readonly coach: CoachRepo;
   private readonly usage: UsageRepo;
 
+  /** Live seatbelt/barrage state per userId (§1.7). Transient device-loop state
+   * mirrored from the native client; not persisted (rebuilt on the next trigger). */
+  private readonly seatbelt = new Map<string, SeatbeltStatus>();
+
   constructor(
     private readonly store: MemoryStore,
     private readonly ai: AiOrchestrationService,
@@ -194,6 +215,37 @@ export class Api {
     } catch {
       return { httpStatus: 503, body: { status: "degraded", storage: "durable", db: "error" } };
     }
+  }
+
+  // §1.7 — POST /seatbelt/trigger : the native client applied a shield on-device
+  // and reports the barrage as active. The backend only mirrors the state (the
+  // device is the enforcer); no copy is generated and no push is sent here.
+  triggerSeatbelt(input: { userId?: unknown; targetApp?: unknown }): ApiResult<SeatbeltStatus> {
+    const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+    const targetApp = typeof input.targetApp === "string" ? input.targetApp.trim() : "";
+    if (!userId) return err(400, "userId_required");
+    if (!targetApp) return err(400, "targetApp_required");
+    const status: SeatbeltStatus = { userId, active: true, targetApp, since: this.clock.nowIso() };
+    // Re-triggering an already-active user overwrites the record (latest wins),
+    // keeping the endpoint idempotent from the device's perspective.
+    this.seatbelt.set(userId, status);
+    return ok(status);
+  }
+
+  // §1.7 — POST /seatbelt/resolved : the user acknowledged the barrage and the
+  // device cleared its shield; drop the mirrored state. Idempotent — resolving a
+  // user with no active barrage still returns 200 with active:false.
+  resolveSeatbelt(input: { userId?: unknown }): ApiResult<SeatbeltStatus> {
+    const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+    if (!userId) return err(400, "userId_required");
+    this.seatbelt.delete(userId);
+    return ok({ userId, active: false });
+  }
+
+  /** Current seatbelt state for a user (inactive when never triggered/resolved).
+   * Exposed for tests and introspection; the device drives state via the routes. */
+  seatbeltStatus(userId: string): SeatbeltStatus {
+    return this.seatbelt.get(userId) ?? { userId, active: false };
   }
 
   // §25 — POST /chat/draft : chat text → confirmable rule draft (never activates)
