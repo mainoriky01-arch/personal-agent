@@ -128,6 +128,18 @@ export function createApiServer(api: Api, options: ServerOptions = {}): Server {
         return send(res, r.status, r);
       }
 
+      if (method === "POST" && path === "/seatbelt/trigger") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = api.triggerSeatbelt(body);
+        return send(res, r.status, r);
+      }
+
+      if (method === "POST" && path === "/seatbelt/resolved") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const r = api.resolveSeatbelt(body);
+        return send(res, r.status, r);
+      }
+
       if (method === "GET" && path === "/memory") {
         const r = await api.listMemory(url.searchParams.get("userId") ?? "");
         return send(res, r.status, r);
